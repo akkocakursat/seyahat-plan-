@@ -1,0 +1,220 @@
+# Seyahat Defteri
+
+Departmanın iş seyahatlerini takip eden, güvenli ve sade bir web uygulaması.
+Planlanan ve gerçekleşen seyahatler kişi ve ay bazında izlenir; her kişi için giriş gerektirmeyen,
+salt-okunur bir paylaşım linki vardır.
+
+- **Node.js 22.13+** (ES modülleri), tek dış bağımlılık: **Express 4**
+- Veritabanı: Node'un yerleşik `node:sqlite` modülü (WAL, foreign_keys açık) — derleme gerektirmez
+- Arayüz: sade HTML + CSS + vanilla JS modülleri; satır içi script/style yok (sıkı CSP)
+
+## Kurulum
+
+```bash
+git clone <depo-adresi> seyahat-defteri && cd seyahat-defteri
+npm ci                      # yalnızca express kurulur
+cp .env.example .env        # geliştirmede NODE_ENV=development, COOKIE_SECURE=false yapın
+npm run kullanici-ekle -- --rol admin yonetici
+npm start                   # http://127.0.0.1:3000
+```
+
+İlk çalıştırmada veritabanı (`data/seyahat.db`) oluşturulur ve şu 4 kişi otomatik tanımlanır:
+Selim Kutlubay, Yusuf Özoğlu, Selahattin Çomuoğlu, Kürşat Akkoca.
+
+### Betikler
+
+| Komut | Açıklama |
+|---|---|
+| `npm start` | Sunucuyu başlatır |
+| `npm run kullanici-ekle -- --rol admin\|editor\|viewer [kullanıcı_adı]` | Giriş hesabı oluşturur. Parola ekrana yazılmadan sorulur (en az 12 karakter). Aynı kullanıcı adıyla tekrar çalıştırılırsa parola ve rol güncellenir, açık oturumları kapatılır. |
+| `npm run kisi-ekle -- "Ad Soyad"` | Seyahat eden yeni kişi ekler (giriş hesabı değildir); rastgele paylaşım anahtarı üretilir. |
+| `npm run yedek` | `VACUUM INTO` ile `yedekler/` klasörüne tutarlı kopya alır, son 30 yedeği tutar. |
+| `npm test` | `node:test` ile gerçek sunucuya karşı uçtan uca testler |
+
+## Roller
+
+| Rol | Yetkiler |
+|---|---|
+| **viewer** (Görüntüleyici) | Yalnızca görür; kişi linklerini göremez |
+| **editor** (Düzenleyici) | Kayıt ekler, düzenler, siler; kişi linkini kopyalar |
+| **admin** (Yönetici) | Editörün yaptıkları + kişi linkini yeniler |
+
+## Kullanım
+
+- **Ana sayfa** (`/`, giriş gerekir): solda *Planlanan* / *Gerçekleşen* düğmeleri ve seçili aydaki kayıt sayıları;
+  seçili olanın altında kişiler ve o aydaki sayıları. Sağda ay seçici (`‹ Ekim 2026 ›`); sayfa her zaman içinde
+  bulunulan ayla açılır, başka aydayken **Bu aya dön** düğmesi çıkar.
+- Kişi seçili değilken 4 kişinin özet kartları görünür. Bir kişiye tıklayınca kayıt formu ve o aya ait kayıt tablosu açılır.
+  Planlanan tabloda yaklaşan tarih, Gerçekleşen tabloda en yeni tarih üsttedir.
+- Satır işlemleri: **Gerçekleşti** / **Plana al**, **Düzenle** (form doldurulur, düğme *Güncelle* olur),
+  **Sil** (satır içinde onay). Tarihi geçmiş ama hâlâ planlanan kayıtlarda **Tarihi geçti** uyarısı görünür.
+- **Kişi linkini kopyala** (editör, yönetici) ve **Linki yenile** (yalnızca yönetici, sayfa içinde onay).
+- **Kişi sayfası** (`/kisi/<anahtar>`): giriş gerektirmez, salt-okunurdur; yalnızca Bölge, Tarih ve Not gösterilir.
+  Link yenilenince eski link anında "Bu link geçersiz ya da yenilenmiş" mesajı verir.
+
+### API
+
+| Yöntem | Yol | Açıklama |
+|---|---|---|
+| POST | `/api/giris` | Giriş; `{username, password}` |
+| GET | `/api/oturum` | Oturum bilgisi ve CSRF anahtarı |
+| POST | `/api/cikis` | Çıkış |
+| GET | `/api/kayitlar?ay=2026-10` | O ayın kayıtları; ay verilmezse tümü |
+| POST | `/api/kayitlar` | Yeni kayıt; `{personId, region, date, note, status}` |
+| PATCH | `/api/kayitlar/:id` | Kısmi güncelleme |
+| DELETE | `/api/kayitlar/:id` | Silme |
+| GET | `/api/kisiler[?ay=2026-10]` | Kişiler ve sayıları; editör ve üstüne paylaşım anahtarı da döner |
+| POST | `/api/kisiler/:id/link-yenile` | Yalnızca yönetici; eski link anında geçersiz olur |
+| GET | `/api/paylasim/:anahtar[?ay=2026-10]` | Giriş gerektirmez; yalnızca kişi adı ve `region/date/note/status` |
+| GET | `/saglik` | Sağlık kontrolü |
+
+Değişiklik istekleri (POST/PATCH/DELETE) `Content-Type: application/json`, sunucunun kendi adresiyle eşleşen
+`Origin` başlığı ve oturum açıksa `X-CSRF-Token` başlığı gerektirir.
+
+## Ayarlar (`.env`)
+
+| Değişken | Varsayılan | Açıklama |
+|---|---|---|
+| `NODE_ENV` | `development` | `production` olduğunda çerez varsayılan olarak Secure olur |
+| `HOST` | `127.0.0.1` | Dinlenecek adres |
+| `PORT` | `3000` | Port |
+| `PUBLIC_URL` | — | Dış adres (ör. `https://seyahat.ornek.com.tr`). Verilirse Origin denetimi buna göre yapılır |
+| `TRUST_PROXY` | kapalı | nginx arkasında `1` |
+| `COOKIE_SECURE` | üretimde `true` | `true` iken çerez `Secure` ve `__Host-` önekli |
+| `SESSION_HOURS` | `8` | Oturum süresi (kayan) |
+| `DB_PATH` | `data/seyahat.db` | Veritabanı dosyası |
+
+`.env` dosyası ek kütüphane olmadan okunur; ortamda zaten tanımlı olan değişkenler ezilmez.
+
+## Güvenlik önlemleri
+
+- **Parolalar:** scrypt (N=32768, r=8, p=1, 16 bayt tuz); karşılaştırma `timingSafeEqual` ile.
+  Kullanıcı yoksa da sahte bir özet doğrulanır; hata mesajı her durumda *"Kullanıcı adı veya parola hatalı."*
+- **Oturumlar:** veritabanında yalnızca oturum kimliğinin SHA-256 özeti tutulur. Çerez `HttpOnly`, `SameSite=Strict`,
+  `Path=/`; üretimde `Secure` ve `__Host-` önekli. Süre 8 saat, kullanıcı aktifken kayarak uzar. Girişte her zaman
+  yeni oturum açılır (oturum sabitlemeye karşı). Kullanıcının parolası/rolü değişince açık oturumları kapanır.
+- **CSRF:** oturuma özel anahtar, değişiklik isteklerinde `X-CSRF-Token` başlığıyla zorunlu; ayrıca `Origin`
+  sunucunun kendi adresiyle eşleşmeli (giriş isteği dahil).
+- **Kaba kuvvet:** yalnızca hatalı denemeler sayılır. Aynı kullanıcı adına 15 dakikada 8, aynı IP'den 30 hatalı
+  denemeden sonra `429` + `Retry-After`. Başarılı giriş kullanıcı sayacını sıfırlar.
+- **İstek sınırı:** genel dakikada 300; paylaşım linki ucu dakikada 30.
+- **SQL:** tüm sorgular hazırlanmış ve parametreli.
+- **Girdi doğrulama (sunucuda):** bilinmeyen alanlar reddedilir; gerçek takvim tarihi (30 Şubat reddedilir), yıl
+  2000–2100; metinlerden kontrol ve görünmez yön karakterleri temizlenir; bölge ≤ 80, not ≤ 500 karakter;
+  JSON gövde sınırı 10 KB (`413`), JSON olmayan gövde `415`.
+- **XSS:** arayüz veriyi yalnızca `textContent` / `createElement` ile yazar; `innerHTML` kullanılmaz.
+- **Başlıklar:** `Content-Security-Policy` (`default-src 'self'; script-src 'self'; style-src 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'`),
+  `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, `Permissions-Policy`
+  (kamera, mikrofon, konum kapalı), COOP/CORP `same-origin`, HTTPS'te HSTS; `X-Powered-By` kapalı.
+- **Statik dosyalar:** yalnızca `/static` altından; dotfile'lar reddedilir, dizin listesi yok.
+- **Hatalar:** ayrıntılar istemciye gösterilmez, yalnızca sunucu kaydına yazılır; async hatalar sarmalayıcıyla yakalanır.
+- **Denetim kaydı:** `audit` tablosunda giriş, başarısız giriş, çıkış, kayıt ekleme/güncelleme/silme ve link yenileme;
+  kullanıcı ve IP ile.
+
+Denetim kaydını incelemek için:
+
+```bash
+sqlite3 data/seyahat.db "SELECT at, username, action, ip FROM audit ORDER BY id DESC LIMIT 50;"
+```
+
+## Üretime alma (nginx + HTTPS)
+
+`.env`:
+
+```ini
+NODE_ENV=production
+HOST=127.0.0.1
+PORT=3000
+PUBLIC_URL=https://seyahat.ornek.com.tr
+TRUST_PROXY=1
+COOKIE_SECURE=true
+```
+
+systemd birimi (`/etc/systemd/system/seyahat.service`):
+
+```ini
+[Unit]
+Description=Seyahat Defteri
+After=network.target
+
+[Service]
+User=seyahat
+WorkingDirectory=/opt/seyahat-defteri
+ExecStart=/usr/bin/npm start
+Restart=on-failure
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/seyahat-defteri/data /opt/seyahat-defteri/yedekler
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
+```
+
+nginx (`/etc/nginx/sites-available/seyahat`):
+
+```nginx
+server {
+    listen 80;
+    server_name seyahat.ornek.com.tr;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name seyahat.ornek.com.tr;
+
+    ssl_certificate     /etc/letsencrypt/live/seyahat.ornek.com.tr/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/seyahat.ornek.com.tr/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    client_max_body_size 16k;
+    server_tokens off;
+
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+> `X-Forwarded-For` başlığını istemciden geleni eklemek yerine `$remote_addr` ile **ezin**; böylece IP tabanlı
+> sınırlar sahte başlıkla atlatılamaz. `TRUST_PROXY=1` yalnızca uygulama nginx arkasındayken kullanılmalıdır.
+
+```bash
+sudo systemctl enable --now seyahat
+sudo -u seyahat npm run kullanici-ekle -- --rol admin yonetici
+```
+
+## Yedekleme
+
+```bash
+npm run yedek
+```
+
+`VACUUM INTO` uygulama çalışırken bile tutarlı bir kopya üretir; dosyalar `yedekler/seyahat-<zaman>.db` adıyla
+saklanır ve en yeni 30 yedek tutulur. Günlük yedek için cron örneği:
+
+```cron
+15 2 * * * cd /opt/seyahat-defteri && /usr/bin/npm run -s yedek >> /var/log/seyahat-yedek.log 2>&1
+```
+
+Geri yüklemek için servisi durdurun, yedek dosyasını `data/seyahat.db` olarak kopyalayın (yanındaki `-wal` ve
+`-shm` dosyalarını silin) ve servisi başlatın. Yedekleri sunucu dışında, erişimi kısıtlı bir yere de kopyalayın:
+paylaşım anahtarları ve parola özetleri yedeğin içindedir.
+
+## Testler
+
+```bash
+npm test
+```
+
+Testler geçici bir veritabanıyla gerçek bir sunucu başlatır ve `fetch` ile şunları doğrular: güvenlik başlıkları,
+oturumsuz erişimde 401, aynı hata mesajı, çerez bayrakları, 4 kişinin tanımlı olması, CSRF anahtarsız ve yabancı
+Origin'li isteklerde 403, ekle/durum değiştir/düzenle/sil, aya göre listelemede sınır günleri, geçersiz girdiler,
+viewer'ın yazamaması, paylaşım linkinin yalnızca o kişiyi göstermesi ve yenilenince eskisinin 404 dönmesi,
+çıkış sonrası oturumun geçersizliği, 413/415, hatalı giriş kilidi ve dizin gezintisinin engellenmesi.

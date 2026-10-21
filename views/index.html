@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Seyahat Defteri</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/css/app.css">
+  <script type="module" src="/static/js/app.js"></script>
+</head>
+<body>
+  <header class="band">
+    <div class="band-inner">
+      <div class="brand">
+        <span class="eyebrow">Departman</span>
+        <h1>Seyahat Defteri</h1>
+      </div>
+      <div class="who" id="who" hidden>
+        <span class="who-name" id="who-name"></span>
+        <span class="who-role" id="who-role"></span>
+        <button type="button" class="btn btn-ghost" id="logout">Çıkış</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="layout" id="layout" hidden>
+    <nav class="sidebar" id="sidebar" aria-label="Durum ve kişiler"></nav>
+    <main class="content" id="content">
+      <div class="monthbar" id="monthbar"></div>
+      <p class="flash" id="flash" role="status" aria-live="polite" hidden></p>
+      <div id="view"></div>
+    </main>
+  </div>
+
+  <p class="loading" id="loading">Yükleniyor…</p>
+</body>
+</html>

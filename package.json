@@ -1,0 +1,21 @@
+{
+  "name": "seyahat-defteri",
+  "version": "1.0.0",
+  "description": "Departman iş seyahatlerini takip eden güvenli web uygulaması",
+  "private": true,
+  "type": "module",
+  "main": "src/server.js",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning src/server.js",
+    "kullanici-ekle": "node --disable-warning=ExperimentalWarning scripts/kullanici-ekle.js",
+    "kisi-ekle": "node --disable-warning=ExperimentalWarning scripts/kisi-ekle.js",
+    "yedek": "node --disable-warning=ExperimentalWarning scripts/yedek.js",
+    "test": "node --disable-warning=ExperimentalWarning --test \"test/**/*.test.js\""
+  },
+  "dependencies": {
+    "express": "^4.22.1"
+  }
+}

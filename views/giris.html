@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Giriş · Seyahat Defteri</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/css/app.css">
+  <script type="module" src="/static/js/giris.js"></script>
+</head>
+<body>
+  <header class="band">
+    <div class="band-inner">
+      <div class="brand">
+        <span class="eyebrow">Departman</span>
+        <h1>Seyahat Defteri</h1>
+      </div>
+    </div>
+  </header>
+  <main class="login-wrap">
+    <form class="card login" id="login-form" novalidate>
+      <h2>Giriş</h2>
+      <label class="field">
+        <span>Kullanıcı adı</span>
+        <input name="username" id="username" autocomplete="username" autocapitalize="none" spellcheck="false" required maxlength="100">
+      </label>
+      <label class="field">
+        <span>Parola</span>
+        <input name="password" id="password" type="password" autocomplete="current-password" required maxlength="1024">
+      </label>
+      <p class="form-error" id="login-error" role="alert" hidden></p>
+      <button type="submit" class="btn btn-primary btn-block" id="login-submit">Giriş yap</button>
+    </form>
+  </main>
+</body>
+</html>
