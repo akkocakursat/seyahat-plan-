@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { startServer, PASSWORDS } from './helpers.js';
 import { upsertUser } from '../src/auth.js';
+import { loadConfig } from '../src/config.js';
 
 test('aynı kullanıcı adına 8 hatalı denemeden sonra 429 + Retry-After; doğru parola da reddedilir', async () => {
   const s = await startServer();
@@ -94,6 +95,47 @@ test('parola özeti scrypt biçiminde, düz metin saklanmaz', async () => {
     const row = s.db.prepare("SELECT password_hash FROM users WHERE username = 'editor'").get();
     assert.match(row.password_hash, /^scrypt\$32768\$8\$1\$[A-Za-z0-9+/=]{24}\$[A-Za-z0-9+/=]+$/);
     assert.ok(!row.password_hash.includes(PASSWORDS.editor));
+  } finally {
+    await s.close();
+  }
+});
+
+test('paralel hatalı denemeler kullanıcı kilidini aşamaz', async () => {
+  const s = await startServer();
+  try {
+    const results = await Promise.all(Array.from({ length: 20 }, (_, i) =>
+      s.req('POST', '/api/giris', { body: { username: 'editor', password: `paralel-yanlis-${i}` } })));
+    const statuses = results.map((r) => r.status);
+    assert.equal(statuses.filter((x) => x === 401).length, 8);
+    assert.equal(statuses.filter((x) => x === 429).length, 12);
+    assert.equal((await s.req('POST', '/api/giris', { body: { username: 'editor', password: PASSWORDS.editor } })).status, 429);
+  } finally {
+    await s.close();
+  }
+});
+
+test('başarılı girişler IP sayacını doldurmaz', async () => {
+  const s = await startServer({ limits: { loginIpFailures: 3 } });
+  try {
+    for (let i = 0; i < 6; i++) await s.login('izleyici');
+    assert.equal((await s.req('POST', '/api/giris', { body: { username: 'yok', password: 'yanlis-parola-xx' } })).status, 401);
+    await s.login('editor');
+  } finally {
+    await s.close();
+  }
+});
+
+test('geçersiz PUBLIC_URL başlangıçta reddedilir', () => {
+  assert.throws(() => loadConfig({ skipEnvFile: true, env: { PUBLIC_URL: 'seyahat.ornek' } }), /PUBLIC_URL/);
+  assert.throws(() => loadConfig({ skipEnvFile: true, env: { PUBLIC_URL: 'ftp://seyahat.ornek' } }), /PUBLIC_URL/);
+  assert.equal(loadConfig({ skipEnvFile: true, env: { PUBLIC_URL: 'https://seyahat.ornek/' } }).publicUrl, 'https://seyahat.ornek');
+});
+
+test('PUBLIC_URL verildiğinde Origin ona göre denetlenir', async () => {
+  const s = await startServer({ env: { PUBLIC_URL: 'https://seyahat.ornek' } });
+  try {
+    assert.equal((await s.req('POST', '/api/giris', { body: { username: 'editor', password: PASSWORDS.editor } })).status, 403);
+    assert.equal((await s.req('POST', '/api/giris', { body: { username: 'editor', password: PASSWORDS.editor }, origin: 'https://seyahat.ornek' })).status, 200);
   } finally {
     await s.close();
   }

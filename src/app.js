@@ -52,6 +52,8 @@ export function createApp({ config, db, logger = console, limits = {} }) {
   const sessionMs = config.sessionHours * 3600_000;
   const userFailures = new Counter({ limit: L.loginUserFailures, windowMs: L.loginWindowMs });
   const ipFailures = new Counter({ limit: L.loginIpFailures, windowMs: L.loginWindowMs });
+  // Sahte özet önceden hesaplanır; ilk "kullanıcı yok" yanıtı da diğerleriyle aynı sürede döner.
+  dummyHash().catch((err) => logger.error('[hata] sahte özet hesaplanamadı', err));
 
   const app = express();
   app.disable('x-powered-by');
@@ -113,7 +115,7 @@ export function createApp({ config, db, logger = console, limits = {} }) {
   });
 
   function expectedOrigin(req) {
-    if (config.publicUrl) return new URL(config.publicUrl).origin;
+    if (config.publicUrl) return config.publicUrl;
     return `${req.protocol}://${req.get('host')}`;
   }
 
@@ -142,7 +144,7 @@ export function createApp({ config, db, logger = console, limits = {} }) {
   const shareLimiter = rateLimit({ limit: L.sharePerMinute, windowMs: 60_000 });
   app.get('/', sendView('index.html'));
   app.get('/giris', sendView('giris.html'));
-  app.get('/kisi/:anahtar', shareLimiter, sendView('kisi.html'));
+  app.get('/kisi/:anahtar', rateLimit({ limit: L.sharePerMinute, windowMs: 60_000 }), sendView('kisi.html'));
 
   // ---- API ----
   const api = express.Router();
@@ -172,18 +174,22 @@ export function createApp({ config, db, logger = console, limits = {} }) {
       return res.status(429).json({ error: 'Çok fazla hatalı deneme. Lütfen daha sonra tekrar deneyin.' });
     }
 
+    // Deneme, parola doğrulanmadan önce (eşzamanlı olarak) sayılır; böylece paralel istekler sınırı aşamaz.
+    // Başarılı girişte bu sayım geri alınır, yani yalnızca hatalı denemeler kalıcı olarak sayılır.
+    ipFailures.hit(clientIp);
+    if (userKey) userFailures.hit(userKey);
+
     const user = creds ? db.prepare('SELECT id, username, role, password_hash FROM users WHERE username = ?').get(creds.username) : null;
     // Kullanıcı yoksa da aynı maliyette bir doğrulama yapılır.
     const ok = await verifyPassword(creds?.password ?? '', user ? user.password_hash : await dummyHash());
 
     if (!user || !ok) {
-      ipFailures.hit(clientIp);
-      if (userKey) userFailures.hit(userKey);
       audit(db, { action: 'giris_basarisiz', username: userKey.slice(0, 40) || null, ip: clientIp });
       return res.status(401).json({ error: LOGIN_ERROR });
     }
 
     userFailures.reset(userKey);
+    ipFailures.undo(clientIp);
     if (req.session) deleteSession(db, req.session.id_hash);
     const session = createSession(db, user.id, config.sessionHours);
     setSessionCookie(res, session.id);

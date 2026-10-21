@@ -13,7 +13,8 @@
     "kullanici-ekle": "node --disable-warning=ExperimentalWarning scripts/kullanici-ekle.js",
     "kisi-ekle": "node --disable-warning=ExperimentalWarning scripts/kisi-ekle.js",
     "yedek": "node --disable-warning=ExperimentalWarning scripts/yedek.js",
-    "test": "node --disable-warning=ExperimentalWarning --test \"test/**/*.test.js\""
+    "test": "node --disable-warning=ExperimentalWarning --test \"test/**/*.test.js\"",
+    "site": "node --disable-warning=ExperimentalWarning scripts/site-olustur.js"
   },
   "dependencies": {
     "express": "^4.22.1"

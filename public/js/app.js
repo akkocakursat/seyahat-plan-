@@ -1,6 +1,6 @@
 import {
   el, clear, api, setCsrf, ApiError, STATUS_LABEL, ROLE_LABEL, currentMonth, monthKey, monthLabel,
-  renderMonthBar, sortTrips, todayISO, regionTag, dateText, formatDate, MONTHS,
+  renderMonthBar, sortTrips, todayISO, regionTag, dateText, formatDate, MONTHS, yollar,
 } from './ortak.js';
 
 const $ = (id) => document.getElementById(id);
@@ -37,7 +37,7 @@ function flash(message, kind = 'ok') {
 
 function handleError(err) {
   if (err instanceof ApiError && err.status === 401) {
-    location.assign('/giris');
+    location.assign(yollar.giris);
     return;
   }
   flash(err.message || 'Beklenmeyen bir hata oluştu.', 'error');
@@ -173,7 +173,7 @@ function renderPerson() {
 }
 
 function shareUrl(p) {
-  return `${location.origin}/kisi/${p.shareKey}`;
+  return yollar.kisiLinki(p.shareKey);
 }
 
 function renderLinkTools(p) {
@@ -335,7 +335,7 @@ async function init() {
   try {
     session = await api('GET', '/api/oturum');
   } catch (err) {
-    if (err instanceof ApiError && err.status === 401) return location.replace('/giris');
+    if (err instanceof ApiError && err.status === 401) return location.replace(yollar.giris);
     $('loading').textContent = err.message;
     return;
   }
@@ -346,7 +346,7 @@ async function init() {
   $('who').hidden = false;
   $('logout').addEventListener('click', async () => {
     try { await api('POST', '/api/cikis'); } catch { /* yine de çık */ }
-    location.replace('/giris');
+    location.replace(yollar.giris);
   });
   try {
     await loadMonth();

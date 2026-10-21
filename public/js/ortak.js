@@ -82,37 +82,6 @@ export function dateText(iso) {
   return el('time', { class: 'mono', datetime: iso, text: formatDate(iso) });
 }
 
-export class ApiError extends Error {
-  constructor(status, message, retryAfter) {
-    super(message);
-    this.status = status;
-    this.retryAfter = retryAfter;
-  }
-}
-
-let csrfToken = null;
-export function setCsrf(token) {
-  csrfToken = token;
-}
-
-export async function api(method, path, body) {
-  const headers = { Accept: 'application/json' };
-  if (body !== undefined) headers['Content-Type'] = 'application/json';
-  if (method !== 'GET' && csrfToken) headers['X-CSRF-Token'] = csrfToken;
-  let res;
-  try {
-    res = await fetch(path, {
-      method, headers, credentials: 'same-origin', cache: 'no-store',
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
-  } catch {
-    throw new ApiError(0, 'Sunucuya ulaşılamadı. Bağlantınızı kontrol edin.');
-  }
-  if (res.status === 204) return null;
-  let data = null;
-  try { data = await res.json(); } catch { /* gövde yok */ }
-  if (!res.ok) {
-    throw new ApiError(res.status, data?.error || 'Beklenmeyen bir hata oluştu.', res.headers.get('Retry-After'));
-  }
-  return data;
-}
+// Veri katmanı: Express sürümünde ./arka-uc.js sunucu API'sine, GitHub Pages sürümünde Supabase'e bağlanır.
+export { api, setCsrf, yollar, paylasimAnahtari } from './arka-uc.js';
+export { ApiError } from './hata.js';

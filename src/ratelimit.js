@@ -30,6 +30,12 @@ export class Counter {
     return e;
   }
 
+  // Önceden sayılmış bir denemeyi geri alır.
+  undo(key) {
+    const e = this.map.get(key);
+    if (e && e.count > 0) e.count -= 1;
+  }
+
   reset(key) {
     this.map.delete(key);
   }

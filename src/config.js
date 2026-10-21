@@ -40,6 +40,18 @@ function trustProxy(value) {
   return value;
 }
 
+function publicUrl(value) {
+  if (!value) return '';
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error(`PUBLIC_URL geçerli bir adres değil: ${value}`);
+  }
+  if (!['http:', 'https:'].includes(url.protocol)) throw new Error('PUBLIC_URL http:// ya da https:// ile başlamalıdır.');
+  return url.origin;
+}
+
 export function loadConfig(overrides = {}) {
   if (!overrides.skipEnvFile) loadEnvFile(resolve(ROOT, '.env'));
   const env = { ...process.env, ...overrides.env };
@@ -54,7 +66,7 @@ export function loadConfig(overrides = {}) {
     production,
     host,
     port: Number.isFinite(port) && port >= 0 ? port : 3000,
-    publicUrl: env.PUBLIC_URL ? env.PUBLIC_URL.replace(/\/+$/, '') : '',
+    publicUrl: publicUrl(env.PUBLIC_URL),
     trustProxy: trustProxy(env.TRUST_PROXY),
     cookieSecure,
     cookieName: cookieSecure ? '__Host-seyahat_oturum' : 'seyahat_oturum',
