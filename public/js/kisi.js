@@ -3,7 +3,7 @@ import {
 } from './ortak.js';
 
 const $ = (id) => document.getElementById(id);
-const key = decodeURIComponent(location.pathname.split('/').filter(Boolean)[1] || '');
+const key = location.pathname.split('/').filter(Boolean)[1] || '';
 
 const state = { month: currentMonth(), status: 'planned', name: '', trips: [] };
 

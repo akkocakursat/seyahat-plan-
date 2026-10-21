@@ -1,11 +1,15 @@
 // Kullanım: npm run yedek — VACUUM INTO ile tutarlı bir kopya alır, son 30 yedeği tutar.
-import { readdirSync, unlinkSync, mkdirSync } from 'node:fs';
+import { readdirSync, unlinkSync, mkdirSync, existsSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { loadConfig, ROOT } from '../src/config.js';
 
 const KEEP = 30;
 const config = loadConfig();
+if (config.dbPath === ':memory:' || !existsSync(config.dbPath)) {
+  console.error(`Veritabanı bulunamadı: ${config.dbPath}`);
+  process.exit(1);
+}
 const dir = resolve(ROOT, 'yedekler');
 mkdirSync(dir, { recursive: true, mode: 0o700 });
 

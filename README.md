@@ -96,7 +96,8 @@ Değişiklik istekleri (POST/PATCH/DELETE) `Content-Type: application/json`, sun
 - **CSRF:** oturuma özel anahtar, değişiklik isteklerinde `X-CSRF-Token` başlığıyla zorunlu; ayrıca `Origin`
   sunucunun kendi adresiyle eşleşmeli (giriş isteği dahil).
 - **Kaba kuvvet:** yalnızca hatalı denemeler sayılır. Aynı kullanıcı adına 15 dakikada 8, aynı IP'den 30 hatalı
-  denemeden sonra `429` + `Retry-After`. Başarılı giriş kullanıcı sayacını sıfırlar.
+  denemeden sonra `429` + `Retry-After`. Başarılı giriş kullanıcı sayacını sıfırlar. Deneme, parola doğrulanmadan
+  önce sayılır; aynı anda gönderilen paralel istekler de sınırı aşamaz.
 - **İstek sınırı:** genel dakikada 300; paylaşım linki ucu dakikada 30.
 - **SQL:** tüm sorgular hazırlanmış ve parametreli.
 - **Girdi doğrulama (sunucuda):** bilinmeyen alanlar reddedilir; gerçek takvim tarihi (30 Şubat reddedilir), yıl
@@ -212,6 +213,8 @@ paylaşım anahtarları ve parola özetleri yedeğin içindedir.
 ```bash
 npm test
 ```
+
+GitHub Actions (`.github/workflows/test.yml`) her push ve pull request'te testleri Node 22.13, 22.x ve 24.x üzerinde çalıştırır.
 
 Testler geçici bir veritabanıyla gerçek bir sunucu başlatır ve `fetch` ile şunları doğrular: güvenlik başlıkları,
 oturumsuz erişimde 401, aynı hata mesajı, çerez bayrakları, 4 kişinin tanımlı olması, CSRF anahtarsız ve yabancı
