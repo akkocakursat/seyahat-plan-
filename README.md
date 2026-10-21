@@ -208,6 +208,64 @@ Geri yüklemek için servisi durdurun, yedek dosyasını `data/seyahat.db` olara
 `-shm` dosyalarını silin) ve servisi başlatın. Yedekleri sunucu dışında, erişimi kısıtlı bir yere de kopyalayın:
 paylaşım anahtarları ve parola özetleri yedeğin içindedir.
 
+## Canlı sürüm: GitHub Pages + Supabase
+
+Aynı arayüz, sunucu gerektirmeden GitHub Pages'te de yayınlanır; veriler Supabase (PostgreSQL) üzerinde tutulur.
+
+- **Adres:** https://akkocakursat.github.io/seyahat-plan-/
+- **Kişi linkleri:** `https://akkocakursat.github.io/seyahat-plan-/kisi.html#<anahtar>` (anahtar `#` kısmında durduğu
+  için sunucu kayıtlarına ve Referer başlığına gitmez).
+
+### Supabase kurulumu (bir kez)
+
+1. Supabase panelinde projeyi açın → **SQL Editor** → **New query**.
+2. [`supabase/kurulum.sql`](supabase/kurulum.sql) dosyasının tamamını yapıştırıp **Run** deyin. Dosya tekrar
+   çalıştırılabilir: var olan tablo ve verilere dokunmaz, fonksiyonları günceller.
+3. Aynı yerde hesapları oluşturun (parola en az 12 karakter):
+
+   ```sql
+   select seyahat.kullanici_ekle('yonetici', 'GUCLU-BIR-PAROLA-BURAYA', 'admin');
+   select seyahat.kullanici_ekle('ayse', 'BASKA-GUCLU-PAROLA', 'editor');
+   select seyahat.kisi_ekle('Yeni Kişi');   -- yeni seyahat eden kişi
+   ```
+
+   Aynı kullanıcı adıyla tekrar çalıştırmak parolayı ve rolü günceller, açık oturumları kapatır.
+   Not: SQL düzenleyicisinin geçmişi çalıştırılan sorguları saklar; parolayı girdikten sonra o sorguyu
+   geçmişten silebilir ya da kullanıcıya ilk girişte değiştirmesini söyleyebilirsiniz.
+
+### Supabase sürümünün güvenlik modeli
+
+- Tablolar API'ye açık olmayan `seyahat` şemasındadır; `anon` rolü bu şemaya hiç erişemez, ayrıca RLS açık ve
+  politika yoktur. Tarayıcı yalnızca `public` şemadaki `SECURITY DEFINER` fonksiyonları çağırabilir
+  (`giris`, `oturum`, `cikis`, `kayitlar_listele`, `kayit_ekle`, `kayit_guncelle`, `kayit_sil`, `kisiler_listele`,
+  `link_yenile`, `paylasim`). Her fonksiyon oturumu, rolü ve girdileri kendisi denetler; `search_path` boştur.
+- Parolalar `pgcrypto` ile **bcrypt (maliyet 12)** özetlenir (PostgreSQL'de scrypt bulunmadığından). Kullanıcı
+  yoksa da sahte özetle aynı maliyette doğrulama yapılır; hata mesajı her durumda aynıdır.
+- Oturum anahtarı 32 rastgele bayttır; veritabanında yalnızca SHA-256 özeti tutulur, süre 8 saat ve kayar.
+  Anahtar çerezle değil istek gövdesiyle gönderildiği için CSRF saldırısı mümkün değildir.
+- Kaba kuvvet ve istek sınırları sunucu sürümüyle aynıdır (kullanıcı adına 15 dk'da 8, IP'den 30 hatalı deneme;
+  genel dakikada 300, paylaşım linki dakikada 30); IP, Supabase'in `cf-connecting-ip` başlığından alınır.
+- Girdi doğrulama, denetim kaydı ve paylaşım linkinin yalnızca `region/date/note/status` döndürmesi sunucu
+  sürümüyle aynıdır.
+- `site/yapilandirma.json` içindeki anahtar Supabase'in **yayımlanabilir (publishable)** anahtarıdır; tarayıcıda
+  görünmesi tasarım gereğidir ve tek başına hiçbir tabloya erişim vermez. `service_role` anahtarı hiçbir yerde
+  kullanılmaz.
+- GitHub Pages yanıt başlığı ayarlatmadığı için CSP ve Referrer-Policy `<meta>` etiketiyle verilir.
+  `frame-ancestors`, HSTS dışı başlıklar ve `X-Frame-Options` bu sürümde uygulanamaz; bunlar gerekiyorsa
+  yukarıdaki Express sürümünü nginx arkasında kullanın.
+
+### Yayınlama
+
+`main` dalına her gönderimde `.github/workflows/pages.yml` testleri çalıştırır, `npm run site` ile `_site/`
+klasörünü üretir ve `gh-pages` dalına yayınlar. Depo ayarlarında **Settings → Pages → Build and deployment →
+Source: Deploy from a branch → `gh-pages` / `(root)`** seçili olmalıdır. Yerelde denemek için:
+
+```bash
+npm run site        # _site/ klasörünü üretir
+```
+
+Supabase SQL testleri (`supabase/test.sql`) her gönderimde CI'da PostgreSQL 17 üzerinde çalışır.
+
 ## Testler
 
 ```bash

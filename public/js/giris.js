@@ -1,11 +1,11 @@
-import { api, ApiError } from './ortak.js';
+import { api, ApiError, yollar } from './ortak.js';
 
 const form = document.getElementById('login-form');
 const error = document.getElementById('login-error');
 const submit = document.getElementById('login-submit');
 
 // Zaten oturum varsa ana sayfaya geç.
-api('GET', '/api/oturum').then(() => location.replace('/'), () => {});
+api('GET', '/api/oturum').then(() => location.replace(yollar.anasayfa), () => {});
 
 form.addEventListener('submit', async (ev) => {
   ev.preventDefault();
@@ -20,7 +20,7 @@ form.addEventListener('submit', async (ev) => {
   submit.disabled = true;
   try {
     await api('POST', '/api/giris', { username, password });
-    location.replace('/');
+    location.replace(yollar.anasayfa);
   } catch (err) {
     let msg = err.message;
     if (err instanceof ApiError && err.status === 429 && err.retryAfter) {

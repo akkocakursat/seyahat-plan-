@@ -1,9 +1,10 @@
 import {
   el, clear, api, ApiError, STATUS_LABEL, currentMonth, monthKey, monthLabel, renderMonthBar, sortTrips, regionTag, dateText,
+  paylasimAnahtari,
 } from './ortak.js';
 
 const $ = (id) => document.getElementById(id);
-const key = location.pathname.split('/').filter(Boolean)[1] || '';
+const key = paylasimAnahtari();
 
 const state = { month: currentMonth(), status: 'planned', name: '', trips: [] };
 
