@@ -8,12 +8,14 @@ import { buildSite } from '../scripts/site-olustur.js';
 test('GitHub Pages sitesi doğru üretilir', () => {
   const out = join(mkdtempSync(join(tmpdir(), 'seyahat-site-')), '_site');
   try {
-    const { url } = buildSite(out, {});
+    const { url, assetDir } = buildSite(out, {});
     assert.match(url, /^https:\/\/[a-z0-9]+\.supabase\.co$/);
-    for (const f of ['index.html', 'giris.html', 'kisi.html', '.nojekyll', 'static/css/app.css', 'static/js/app.js', 'static/js/arka-uc.js']) {
+    assert.match(assetDir, /^v\/[0-9a-f]{10}$/, 'dosyalar sürüm klasöründe (önbellek kırma)');
+    for (const f of ['index.html', 'giris.html', 'kisi.html', '.nojekyll', `${assetDir}/css/app.css`, `${assetDir}/js/app.js`, `${assetDir}/js/arka-uc.js`]) {
       assert.ok(existsSync(join(out, f)), f);
     }
-    const adapter = readFileSync(join(out, 'static/js/arka-uc.js'), 'utf8');
+    assert.equal(buildSite(out, {}).assetDir, assetDir, 'aynı içerik aynı sürüm');
+    const adapter = readFileSync(join(out, `${assetDir}/js/arka-uc.js`), 'utf8');
     assert.doesNotMatch(adapter, /__SUPABASE_(URL|KEY)__/);
     assert.match(adapter, /rest\/v1\/rpc/);
     for (const f of ['index.html', 'giris.html', 'kisi.html']) {
@@ -22,6 +24,7 @@ test('GitHub Pages sitesi doğru üretilir', () => {
       assert.ok(html.includes(`connect-src ${url};`), 'connect-src yalnızca Supabase');
       assert.match(html, /<meta name="referrer" content="no-referrer">/);
       assert.doesNotMatch(html, /"\/static\//, 'yollar göreli olmalı (depo alt dizini)');
+      assert.ok(html.includes(`src="${assetDir}/js/`) && html.includes(`href="${assetDir}/css/app.css"`), 'sürümlü yollar');
       assert.doesNotMatch(html, /<script(?![^>]*\bsrc=)[^>]*>|<style|\sstyle=|\son[a-z]+=/i);
     }
     assert.throws(() => buildSite(out, { SUPABASE_URL: 'http://kotu.example', SUPABASE_PUBLISHABLE_KEY: 'x' }), /https/);
