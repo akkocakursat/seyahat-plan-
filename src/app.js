@@ -7,7 +7,7 @@ import {
 } from './auth.js';
 import { Counter, rateLimit } from './ratelimit.js';
 import {
-  ValidationError, parseMonth, parseId, isValidDate, validateTripCreate, validateTripPatch, validateLogin,
+  ValidationError, parseMonth, parseId, isValidDate, checkTripRange, shiftDate, tripDays, validateTripCreate, validateTripPatch, validateLogin,
 } from './validate.js';
 
 const LOGIN_ERROR = 'Kullanıcı adı veya parola hatalı.';
@@ -215,7 +215,7 @@ export function createApp({ config, db, logger = console, limits = {} }) {
     return range;
   }
 
-  const TRIP_COLS = 'id, person_id AS personId, region, date, note, status';
+  const TRIP_COLS = 'id, person_id AS personId, region, date, end_date AS endDate, note, status';
 
   // ?bas=YYYY-AA-GG&bit=YYYY-AA-GG: yıllık hafta planı için tarih aralığı (en fazla 400 gün).
   function dateRange(req) {
@@ -232,7 +232,8 @@ export function createApp({ config, db, logger = console, limits = {} }) {
   api.get('/kayitlar', requireAuth, (req, res) => {
     const range = dateRange(req) ?? monthRange(req);
     const rows = range
-      ? db.prepare(`SELECT ${TRIP_COLS} FROM trips WHERE date BETWEEN ? AND ? ORDER BY date, id`).all(range.from, range.to)
+      // Aralıkla kesişen (o döneme taşan) seyahatler de listelenir.
+      ? db.prepare(`SELECT ${TRIP_COLS} FROM trips WHERE date <= ? AND end_date >= ? ORDER BY date, id`).all(range.to, range.from)
       : db.prepare(`SELECT ${TRIP_COLS} FROM trips ORDER BY date, id`).all();
     res.json({ kayitlar: rows });
   });
@@ -243,15 +244,15 @@ export function createApp({ config, db, logger = console, limits = {} }) {
   api.post('/kayitlar', requireRole('admin', 'editor'), requireCsrf, (req, res) => {
     const t = validateTripCreate(req.body);
     if (!personExists(t.personId)) throw new ValidationError('Kişi bulunamadı.');
-    const info = db.prepare('INSERT INTO trips (person_id, region, date, note, status, created_by) VALUES (?, ?, ?, ?, ?, ?)')
-      .run(t.personId, t.region, t.date, t.note, t.status, req.session.user_id);
+    const info = db.prepare('INSERT INTO trips (person_id, region, date, end_date, note, status, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .run(t.personId, t.region, t.date, t.endDate, t.note, t.status, req.session.user_id);
     const trip = getTrip(Number(info.lastInsertRowid));
     audit(db, { ...actor(req), action: 'kayit_ekle', detail: trip });
     res.status(201).json({ kayit: trip });
   });
 
   // Alan adı -> sütun adı eşlemesi sabittir; SQL'e yalnızca bu sabit adlar girer.
-  const PATCH_COLUMNS = { personId: 'person_id', region: 'region', date: 'date', note: 'note', status: 'status' };
+  const PATCH_COLUMNS = { personId: 'person_id', region: 'region', date: 'date', endDate: 'end_date', note: 'note', status: 'status' };
 
   api.patch('/kayitlar/:id', requireRole('admin', 'editor'), requireCsrf, (req, res) => {
     const id = parseId(req.params.id);
@@ -259,6 +260,15 @@ export function createApp({ config, db, logger = console, limits = {} }) {
     if (!before) throw new HttpError(404, 'Kayıt bulunamadı.');
     const changes = validateTripPatch(req.body);
     if (changes.personId !== undefined && !personExists(changes.personId)) throw new ValidationError('Kişi bulunamadı.');
+    // Yalnızca başlangıç değişirse seyahatin süresi korunur (bitiş de aynı miktar kayar).
+    if (changes.date !== undefined || changes.endDate !== undefined) {
+      const start = changes.date ?? before.date;
+      const end = changes.endDate ?? (changes.date !== undefined
+        ? shiftDate(changes.date, tripDays(before.date, before.endDate) - 1) : before.endDate);
+      checkTripRange(start, end);
+      changes.date = start;
+      changes.endDate = end;
+    }
     const keys = Object.keys(changes);
     const sets = keys.map((k) => `${PATCH_COLUMNS[k]} = ?`).join(', ');
     db.prepare(`UPDATE trips SET ${sets}, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?`)
@@ -279,8 +289,8 @@ export function createApp({ config, db, logger = console, limits = {} }) {
 
   api.get('/kisiler', requireAuth, (req, res) => {
     const range = monthRange(req);
-    const where = range ? 'AND t.date BETWEEN ? AND ?' : '';
-    const params = range ? [range.from, range.to] : [];
+    const where = range ? 'AND t.date <= ? AND t.end_date >= ?' : '';
+    const params = range ? [range.to, range.from] : [];
     const rows = db.prepare(`
       SELECT p.id, p.name, p.share_key AS shareKey,
         COUNT(CASE WHEN t.status = 'planned' THEN 1 END) AS planned,
@@ -312,8 +322,9 @@ export function createApp({ config, db, logger = console, limits = {} }) {
     const person = SHARE_KEY_RE.test(key) ? db.prepare('SELECT id, name FROM people WHERE share_key = ?').get(key) : null;
     if (!person) throw new HttpError(404, 'Bu link geçersiz ya da yenilenmiş.');
     const range = monthRange(req);
-    const sql = `SELECT region, date, note, status FROM trips WHERE person_id = ? ${range ? 'AND date BETWEEN ? AND ?' : ''} ORDER BY date, id`;
-    const trips = db.prepare(sql).all(person.id, ...(range ? [range.from, range.to] : []));
+    const sql = `SELECT region, date, end_date AS endDate, note, status FROM trips
+      WHERE person_id = ? ${range ? 'AND date <= ? AND end_date >= ?' : ''} ORDER BY date, id`;
+    const trips = db.prepare(sql).all(person.id, ...(range ? [range.to, range.from] : []));
     res.json({ name: person.name, kayitlar: trips });
   });
 

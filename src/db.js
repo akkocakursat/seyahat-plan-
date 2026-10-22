@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS trips (
   person_id  INTEGER NOT NULL REFERENCES people(id) ON DELETE RESTRICT,
   region     TEXT NOT NULL CHECK (length(region) BETWEEN 1 AND 80),
   date       TEXT NOT NULL CHECK (date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+  end_date   TEXT CHECK (end_date >= date),
   note       TEXT NOT NULL DEFAULT '' CHECK (length(note) <= 500),
   status     TEXT NOT NULL CHECK (status IN ('planned', 'done')),
   created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
@@ -71,8 +72,16 @@ export function openDatabase(path) {
   db.exec('PRAGMA busy_timeout = 5000;');
   db.exec('PRAGMA synchronous = NORMAL;');
   db.exec(SCHEMA);
+  migrate(db);
   seedPeople(db);
   return db;
+}
+
+// Eski veritabanlarını günceller: seyahatlere bitiş tarihi (mevcut kayıtlar tek günlük sayılır).
+function migrate(db) {
+  const cols = db.prepare('PRAGMA table_info(trips)').all().map((c) => c.name);
+  if (!cols.includes('end_date')) db.exec('ALTER TABLE trips ADD COLUMN end_date TEXT');
+  db.exec('UPDATE trips SET end_date = date WHERE end_date IS NULL OR end_date < date');
 }
 
 function seedPeople(db) {

@@ -31,7 +31,7 @@ test('GitHub Pages sitesi doğru üretilir', () => {
 });
 
 test('arayüz kullanıcı verisini innerHTML ile basmaz', () => {
-  for (const f of ['app.js', 'giris.js', 'kisi.js', 'ortak.js', 'arka-uc.js']) {
+  for (const f of ['app.js', 'giris.js', 'kisi.js', 'ortak.js', 'arka-uc.js', 'hafta.js', 'ozet.js', 'hata.js']) {
     const src = readFileSync(new URL(`../public/js/${f}`, import.meta.url), 'utf8');
     assert.doesNotMatch(src, /innerHTML|outerHTML|insertAdjacentHTML|document\.write/, f);
   }

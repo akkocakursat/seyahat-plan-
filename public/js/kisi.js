@@ -1,5 +1,5 @@
 import {
-  el, clear, api, ApiError, STATUS_LABEL, currentMonth, monthKey, monthLabel, renderMonthBar, sortTrips, regionTag, dateText,
+  el, clear, api, ApiError, STATUS_LABEL, currentMonth, monthKey, monthLabel, renderMonthBar, sortTrips, regionTag, rangeText,
   paylasimAnahtari,
 } from './ortak.js';
 
@@ -52,7 +52,7 @@ function render() {
     el('thead', {}, el('tr', {}, el('th', { scope: 'col', text: 'Bölge' }), el('th', { scope: 'col', text: 'Tarih' }), el('th', { scope: 'col', text: 'Not' }))),
     el('tbody', {}, trips.map((t) => el('tr', {},
       el('td', { 'data-label': 'Bölge' }, regionTag(t.region)),
-      el('td', { 'data-label': 'Tarih' }, dateText(t.date)),
+      el('td', { 'data-label': 'Tarih' }, rangeText(t)),
       el('td', { 'data-label': 'Not', class: 'note' }, t.note || el('span', { class: 'muted', text: '—' }))))))));
 }
 

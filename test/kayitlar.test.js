@@ -49,7 +49,7 @@ test('ekle / durum değiştir / düzenle / sil', async () => {
     session: ed, body: { region: 'Manisa', date: '2026-10-16', note: '', personId: people[1].id },
   });
   assert.equal(edited.status, 200);
-  assert.deepEqual(edited.json.kayit, { id: k.id, personId: people[1].id, region: 'Manisa', date: '2026-10-16', note: '', status: 'planned' });
+  assert.deepEqual(edited.json.kayit, { id: k.id, personId: people[1].id, region: 'Manisa', date: '2026-10-16', endDate: '2026-10-16', note: '', status: 'planned' });
 
   const del = await s.req('DELETE', `/api/kayitlar/${k.id}`, { session: ed });
   assert.equal(del.status, 204);
@@ -103,6 +103,32 @@ test('tarih aralığıyla listeleme (yıllık hafta planı)', async () => {
     assert.equal((await s.req('GET', `/api/kayitlar?${q}`, { session: ed })).status, 400, q);
   }
   for (const id of ids) await s.req('DELETE', `/api/kayitlar/${id}`, { session: ed });
+});
+
+test('başlangıç–bitiş tarihli seyahat: gün sayısı, ay kesişimi, süre korunarak kaydırma', async () => {
+  const pid = people[1].id;
+  const r = await add({ personId: pid, region: 'Uzun yol', date: '2026-10-30', endDate: '2026-11-02', status: 'planned' });
+  assert.equal(r.status, 201);
+  assert.equal(r.json.kayit.endDate, '2026-11-02');
+  const id = r.json.kayit.id;
+  // Ekim'de başlayıp Kasım'da biten seyahat iki ayda da görünür.
+  for (const ay of ['2026-10', '2026-11']) {
+    const list = (await s.req('GET', `/api/kayitlar?ay=${ay}`, { session: ed })).json.kayitlar;
+    assert.ok(list.some((k) => k.id === id), ay);
+  }
+  assert.ok(!(await s.req('GET', '/api/kayitlar?ay=2026-12', { session: ed })).json.kayitlar.some((k) => k.id === id));
+  // Yalnızca başlangıç değişince süre (4 gün) korunur.
+  const moved = await s.req('PATCH', `/api/kayitlar/${id}`, { session: ed, body: { date: '2026-12-01' } });
+  assert.deepEqual([moved.json.kayit.date, moved.json.kayit.endDate], ['2026-12-01', '2026-12-04']);
+  const shortened = await s.req('PATCH', `/api/kayitlar/${id}`, { session: ed, body: { endDate: '2026-12-02' } });
+  assert.equal(shortened.json.kayit.endDate, '2026-12-02');
+  assert.equal((await s.req('PATCH', `/api/kayitlar/${id}`, { session: ed, body: { endDate: '2026-11-30' } })).status, 400);
+  // Bitiş verilmezse tek günlük sayılır; ters sıra ve 365 günden uzun reddedilir.
+  assert.equal((await add({ personId: pid, region: 'Tek', date: '2026-10-05' })).json.kayit.endDate, '2026-10-05');
+  assert.equal((await add({ personId: pid, region: 'Ters', date: '2026-10-05', endDate: '2026-10-04' })).status, 400);
+  assert.equal((await add({ personId: pid, region: 'Uzun', date: '2026-01-01', endDate: '2027-01-01' })).status, 400);
+  assert.equal((await add({ personId: pid, region: 'Bozuk', date: '2026-10-05', endDate: '2026-02-30' })).status, 400);
+  await s.req('DELETE', `/api/kayitlar/${id}`, { session: ed });
 });
 
 test('geçersiz girdiler reddedilir', async () => {
@@ -185,7 +211,7 @@ test('paylaşım linki yalnızca o kişiyi gösterir; yenilenince eskisi 404', a
   assert.equal(res.json.name, a.name);
   assert.deepEqual(Object.keys(res.json).sort(), ['kayitlar', 'name']);
   assert.ok(res.json.kayitlar.length >= 1);
-  for (const k of res.json.kayitlar) assert.deepEqual(Object.keys(k).sort(), ['date', 'note', 'region', 'status']);
+  for (const k of res.json.kayitlar) assert.deepEqual(Object.keys(k).sort(), ['date', 'endDate', 'note', 'region', 'status']);
   assert.ok(res.json.kayitlar.some((k) => k.region === 'Trabzon'));
   assert.ok(!res.json.kayitlar.some((k) => k.region === 'Rize'));
   assert.ok(!res.text.includes(`"id"`) && !res.text.includes('personId') && !res.text.includes('shareKey'));

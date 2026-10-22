@@ -58,6 +58,17 @@ create table if not exists seyahat.trips (
 );
 -- Silinen kayıtlar yalnızca işaretlenir (geri alınabilir, denetim izi korunur); hiçbir sorguda görünmez.
 alter table seyahat.trips add column if not exists deleted_at timestamptz;
+
+-- Seyahatin bitiş tarihi (başlangıç dahil en fazla 365 gün). Eski kayıtlar tek günlük sayılır.
+alter table seyahat.trips add column if not exists end_date date;
+update seyahat.trips set end_date = date where end_date is null;
+alter table seyahat.trips alter column end_date set not null;
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'trips_end_date_check' and conrelid = 'seyahat.trips'::regclass) then
+    alter table seyahat.trips add constraint trips_end_date_check check (end_date >= date and end_date - date < 365);
+  end if;
+end $$;
 create index if not exists trips_date on seyahat.trips (date);
 create index if not exists trips_person on seyahat.trips (person_id, date);
 create index if not exists trips_created_by on seyahat.trips (created_by);
@@ -219,6 +230,15 @@ begin
 end $$;
 
 -- Kayıt girdisini doğrular. Hata varsa {"error": "..."} döner; yoksa normalleştirilmiş alanlar.
+-- Başlangıç–bitiş denetimi: hata metni ya da null.
+create or replace function seyahat.check_trip_range(p_start date, p_end date) returns text
+language sql immutable set search_path = '' as $$
+  select case
+    when p_end < p_start then 'Bitiş tarihi başlangıç tarihinden önce olamaz.'
+    when p_end - p_start >= 365 then 'Bir seyahat en fazla 365 gün olabilir.'
+  end
+$$;
+
 create or replace function seyahat.validate_trip(p jsonb, p_partial boolean) returns jsonb
 language plpgsql immutable set search_path = '' as $$
 declare
@@ -231,7 +251,7 @@ begin
   end if;
   select string_agg(k, ', ') into v_unknown
   from jsonb_object_keys(p) as k
-  where k not in ('personId', 'region', 'date', 'note', 'status');
+  where k not in ('personId', 'region', 'date', 'endDate', 'note', 'status');
   if v_unknown is not null then
     return jsonb_build_object('error', left('Bilinmeyen alan: ' || v_unknown, 80));
   end if;
@@ -272,6 +292,20 @@ begin
     v_out := v_out || jsonb_build_object('date', p ->> 'date');
   end if;
 
+  if p ? 'endDate' then
+    if jsonb_typeof(p -> 'endDate') <> 'string' or seyahat.parse_date(p ->> 'endDate') is null then
+      return jsonb_build_object('error', 'Bitiş tarihi geçerli bir YYYY-AA-GG tarihi olmalıdır (2000–2100).');
+    end if;
+    v_out := v_out || jsonb_build_object('endDate', p ->> 'endDate');
+  elsif not p_partial then
+    v_out := v_out || jsonb_build_object('endDate', p ->> 'date');
+  end if;
+  -- Başlangıç ve bitiş birlikte biliniyorsa sıra ve süre denetlenir (kısmi güncellemede kayit_guncelle denetler).
+  if v_out ? 'date' and v_out ? 'endDate' then
+    v_txt := seyahat.check_trip_range((v_out ->> 'date')::date, (v_out ->> 'endDate')::date);
+    if v_txt is not null then return jsonb_build_object('error', v_txt); end if;
+  end if;
+
   if p ? 'note' then
     if jsonb_typeof(p -> 'note') = 'null' then
       v_txt := '';
@@ -301,7 +335,8 @@ end $$;
 create or replace function seyahat.trip_json(t seyahat.trips) returns jsonb
 language sql immutable set search_path = '' as $$
   select jsonb_build_object('id', t.id, 'personId', t.person_id, 'region', t.region,
-                            'date', to_char(t.date, 'YYYY-MM-DD'), 'note', t.note, 'status', t.status)
+                            'date', to_char(t.date, 'YYYY-MM-DD'), 'endDate', to_char(t.end_date, 'YYYY-MM-DD'),
+                            'note', t.note, 'status', t.status)
 $$;
 
 -- Kullanıcı adı anahtarı: küçük harf, Türkçe harfler ASCII karşılıklarına çevrilir.
@@ -477,7 +512,7 @@ begin
   return json_build_object('kayitlar', coalesce((
     select json_agg(seyahat.trip_json(t) order by t.date, t.id)
     from seyahat.trips t
-    where t.deleted_at is null and (v_from is null or t.date between v_from and v_to)), '[]'::json));
+    where t.deleted_at is null and (v_from is null or (t.date <= v_to and t.end_date >= v_from))), '[]'::json));
 end $$;
 
 -- Yıllık hafta planı için tarih aralığıyla listeleme (en fazla 400 gün).
@@ -499,7 +534,7 @@ begin
   return json_build_object('kayitlar', coalesce((
     select json_agg(seyahat.trip_json(t) order by t.date, t.id)
     from seyahat.trips t
-    where t.deleted_at is null and t.date between v_from and v_to), '[]'::json));
+    where t.deleted_at is null and t.date <= v_to and t.end_date >= v_from), '[]'::json));
 end $$;
 
 create or replace function public.kayit_ekle(p_token text, p_kayit jsonb) returns json
@@ -519,8 +554,8 @@ begin
   if not exists (select 1 from seyahat.people where id = (v ->> 'personId')::bigint) then
     return seyahat.err(400, 'Kişi bulunamadı.');
   end if;
-  insert into seyahat.trips (person_id, region, date, note, status, created_by)
-  values ((v ->> 'personId')::bigint, v ->> 'region', (v ->> 'date')::date, v ->> 'note', v ->> 'status', v_user.id)
+  insert into seyahat.trips (person_id, region, date, end_date, note, status, created_by)
+  values ((v ->> 'personId')::bigint, v ->> 'region', (v ->> 'date')::date, (v ->> 'endDate')::date, v ->> 'note', v ->> 'status', v_user.id)
   returning * into v_trip;
   perform seyahat.audit_log(v_user, 'kayit_ekle', seyahat.trip_json(v_trip));
   return json_build_object('kayit', seyahat.trip_json(v_trip));
@@ -533,6 +568,8 @@ declare
   v jsonb;
   v_before seyahat.trips;
   v_after seyahat.trips;
+  v_start date;
+  v_end date;
   v_retry integer := seyahat.general_limit();
 begin
   if v_retry > 0 then return seyahat.err(429, 'Çok fazla istek. Lütfen biraz sonra tekrar deneyin.', v_retry); end if;
@@ -546,10 +583,18 @@ begin
   if v ? 'personId' and not exists (select 1 from seyahat.people where id = (v ->> 'personId')::bigint) then
     return seyahat.err(400, 'Kişi bulunamadı.');
   end if;
+  -- Yalnızca başlangıç değişirse seyahatin süresi korunur (bitiş de aynı miktar kayar).
+  v_start := coalesce((v ->> 'date')::date, v_before.date);
+  v_end := coalesce((v ->> 'endDate')::date,
+                    case when v ? 'date' then v_start + (v_before.end_date - v_before.date) else v_before.end_date end);
+  if seyahat.check_trip_range(v_start, v_end) is not null then
+    return seyahat.err(400, seyahat.check_trip_range(v_start, v_end));
+  end if;
   update seyahat.trips set
     person_id  = coalesce((v ->> 'personId')::bigint, person_id),
     region     = coalesce(v ->> 'region', region),
-    date       = coalesce((v ->> 'date')::date, date),
+    date       = v_start,
+    end_date   = v_end,
     note       = coalesce(v ->> 'note', note),
     status     = coalesce(v ->> 'status', status),
     updated_at = now()
@@ -602,9 +647,9 @@ begin
       jsonb_strip_nulls(jsonb_build_object(
         'id', p.id, 'name', p.name,
         'planned', (select count(*) from seyahat.trips t where t.person_id = p.id and t.status = 'planned' and t.deleted_at is null
-                      and (v_from is null or t.date between v_from and v_to)),
+                      and (v_from is null or (t.date <= v_to and t.end_date >= v_from))),
         'done', (select count(*) from seyahat.trips t where t.person_id = p.id and t.status = 'done' and t.deleted_at is null
-                   and (v_from is null or t.date between v_from and v_to)),
+                   and (v_from is null or (t.date <= v_to and t.end_date >= v_from))),
         'shareKey', case when v_keys then p.share_key end))
       order by p.id)
     from seyahat.people p), '[]'::json));
@@ -653,9 +698,10 @@ begin
   end if;
   return json_build_object('name', v_person.name, 'kayitlar', coalesce((
     select json_agg(json_build_object('region', t.region, 'date', to_char(t.date, 'YYYY-MM-DD'),
+                                      'endDate', to_char(t.end_date, 'YYYY-MM-DD'),
                                       'note', t.note, 'status', t.status) order by t.date, t.id)
     from seyahat.trips t
-    where t.person_id = v_person.id and t.deleted_at is null and (v_from is null or t.date between v_from and v_to)), '[]'::json));
+    where t.person_id = v_person.id and t.deleted_at is null and (v_from is null or (t.date <= v_to and t.end_date >= v_from))), '[]'::json));
 end $$;
 
 -- ---------------------------------------------------------------- Yetkiler

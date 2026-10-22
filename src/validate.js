@@ -43,7 +43,22 @@ export function parseId(value) {
   return null;
 }
 
-const TRIP_FIELDS = ['personId', 'region', 'date', 'note', 'status'];
+const TRIP_FIELDS = ['personId', 'region', 'date', 'endDate', 'note', 'status'];
+export const MAX_TRIP_DAYS = 365;
+
+// İki tarih arasındaki gün sayısı (başlangıç ve bitiş dahil).
+export function tripDays(start, end) {
+  return Math.round((Date.parse(`${end}T00:00:00Z`) - Date.parse(`${start}T00:00:00Z`)) / 86_400_000) + 1;
+}
+
+export function shiftDate(iso, days) {
+  return new Date(Date.parse(`${iso}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
+}
+
+export function checkTripRange(start, end) {
+  if (end < start) throw new ValidationError('Bitiş tarihi başlangıç tarihinden önce olamaz.');
+  if (tripDays(start, end) > MAX_TRIP_DAYS) throw new ValidationError(`Bir seyahat en fazla ${MAX_TRIP_DAYS} gün olabilir.`);
+}
 export const STATUSES = ['planned', 'done'];
 
 function assertPlainObject(body) {
@@ -73,6 +88,10 @@ function field(name, value) {
       if (!isValidDate(value)) throw new ValidationError('Tarih geçerli bir YYYY-AA-GG tarihi olmalıdır (2000–2100).');
       return value;
     }
+    case 'endDate': {
+      if (!isValidDate(value)) throw new ValidationError('Bitiş tarihi geçerli bir YYYY-AA-GG tarihi olmalıdır (2000–2100).');
+      return value;
+    }
     case 'note': {
       if (value === null || value === undefined) return '';
       if (typeof value !== 'string') throw new ValidationError('Not metin olmalıdır.');
@@ -96,7 +115,11 @@ export function validateTripCreate(body) {
     if (body[k] === undefined) throw new ValidationError(`Eksik alan: ${k}`);
   }
   const out = {};
-  for (const k of TRIP_FIELDS) out[k] = field(k, k === 'status' ? (body.status ?? 'planned') : body[k]);
+  for (const k of TRIP_FIELDS) {
+    const value = k === 'status' ? (body.status ?? 'planned') : k === 'endDate' ? (body.endDate ?? body.date) : body[k];
+    out[k] = field(k, value);
+  }
+  checkTripRange(out.date, out.endDate);
   return out;
 }
 

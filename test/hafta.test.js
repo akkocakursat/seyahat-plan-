@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { isoWeekOf, isoWeekStart, weeksInYear, yearRange, weekDays, parseWeeks } from '../public/js/hafta.js';
+import { isoWeekOf, isoWeekStart, weeksInYear, yearRange, weekDays, parseWeeks, tripWeeks } from '../public/js/hafta.js';
+import { daysWithin, summarize } from '../public/js/ozet.js';
+import { tripDays } from '../public/js/ortak.js';
 
 test('ISO hafta hesapları', () => {
   assert.equal(weeksInYear(2026), 53);
@@ -31,4 +33,34 @@ test('hafta listesi ayrıştırma', () => {
   assert.ok(parseWeeks('53', 52).error);
   assert.ok(parseWeeks('10-5', 52).error);
   assert.ok(parseWeeks('a-b', 52).error);
+});
+
+test('çok günlük seyahat: gün sayısı ve kapsadığı haftalar', () => {
+  assert.equal(tripDays({ date: '2026-10-21' }), 1);
+  assert.equal(tripDays({ date: '2026-10-21', endDate: '2026-10-23' }), 3);
+  assert.equal(tripDays({ date: '2026-02-27', endDate: '2026-03-02' }), 4);
+  assert.deepEqual(tripWeeks({ date: '2026-10-23', endDate: '2026-10-27' }), [{ year: 2026, week: 43 }, { year: 2026, week: 44 }]);
+  assert.deepEqual(tripWeeks({ date: '2026-12-31', endDate: '2027-01-05' }).map((w) => `${w.year}-${w.week}`), ['2026-53', '2027-1']);
+});
+
+test('özet: döneme düşen günler, planlanan / gerçekleşen ve toplam', () => {
+  assert.equal(daysWithin({ date: '2026-10-30', endDate: '2026-11-02' }, '2026-10-01', '2026-10-31'), 2);
+  assert.equal(daysWithin({ date: '2026-10-30', endDate: '2026-11-02' }, '2026-11-01', '2026-11-30'), 2);
+  assert.equal(daysWithin({ date: '2026-12-30', endDate: '2027-01-02' }, '2026-01-01', '2026-12-31'), 2);
+  assert.equal(daysWithin({ date: '2026-09-01' }, '2026-10-01', '2026-10-31'), 0);
+  const people = [{ id: 1 }, { id: 2 }];
+  const trips = [
+    { personId: 1, date: '2026-03-02', endDate: '2026-03-04', status: 'done' },
+    { personId: 1, date: '2026-11-10', endDate: '2026-11-14', status: 'planned' },
+    { personId: 2, date: '2026-12-30', endDate: '2027-01-03', status: 'planned' },
+    { personId: 2, date: '2025-06-01', endDate: '2025-06-02', status: 'done' },
+  ];
+  const { rows, total } = summarize(trips, people, '2026-01-01', '2026-12-31');
+  const { overdue, ...r1 } = rows.get(1); // "tarihi geçti" bugüne bağlı olduğundan karşılaştırılmaz
+  assert.equal(typeof overdue, 'number');
+  assert.deepEqual(r1, { trips: 2, days: 8, doneTrips: 1, doneDays: 3, planTrips: 1, planDays: 5 });
+  assert.equal(rows.get(2).days, 2);
+  assert.equal(rows.get(2).trips, 1);
+  assert.equal(total.days, 10);
+  assert.equal(total.doneDays, 3);
 });

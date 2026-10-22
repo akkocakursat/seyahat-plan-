@@ -1,10 +1,12 @@
 import {
   el, clear, api, setCsrf, ApiError, STATUS_LABEL, ROLE_LABEL, currentMonth, monthKey, monthLabel,
   renderMonthBar, sortTrips, todayISO, regionTag, dateText, formatDate, MONTHS, yollar,
+  rangeText, tripDays, isOverdue, dateRangeInputs, daysBadge,
 } from './ortak.js';
 import {
   renderWeekPlan, scrollToCurrentWeek, openAddDialog, openTripDialog, openBulkDialog, yearRange,
 } from './hafta.js';
+import { renderSummary } from './ozet.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -20,7 +22,8 @@ const state = {
   confirmRenew: false,
   busy: false,
   // Kişi seçili değilken: 'ay' (aylık kartlar) ya da 'hafta' (yıllık hafta planı tablosu)
-  view: readPref('seyahat_gorunum', 'hafta') === 'ay' ? 'ay' : 'hafta',
+  view: ['hafta', 'ay', 'ozet'].includes(readPref('seyahat_gorunum', 'hafta')) ? readPref('seyahat_gorunum', 'hafta') : 'hafta',
+  sumMonth: 0, // özet dönemi: 0 = tüm yıl, 1–12 = ay
   year: new Date().getFullYear(),
   yearTrips: [],
   yearLoaded: null,
@@ -35,13 +38,15 @@ function writePref(key, value) {
 }
 
 const weekMode = () => state.view === 'hafta' && !state.personId;
+// Hafta planı ve özet yıllık veriyle çalışır; aylık kartlar ve kişi detayı seçili ayla.
+const yearMode = () => state.view !== 'ay' && !state.personId;
 
 const canEdit = () => state.user && (state.user.role === 'admin' || state.user.role === 'editor');
 const isAdmin = () => state.user?.role === 'admin';
 const person = (id) => state.people.find((p) => p.id === id);
 // Hafta görünümünde menüdeki sayılar seçili yılın, aksi halde seçili ayın kayıtlarından hesaplanır.
 const tripsOf = (status, personId) =>
-  (weekMode() ? state.yearTrips : state.trips)
+  (yearMode() ? state.yearTrips : state.trips)
     .filter((t) => t.status === status && (personId === undefined || t.personId === personId));
 
 // ---------- Bildirim ----------
@@ -75,14 +80,17 @@ async function loadMonth() {
 }
 
 async function loadYear() {
-  const { bas, bit } = yearRange(state.year);
+  // ISO hafta yılı ile takvim yılının birleşimi (hafta planı ve özet aynı veriyi kullanır).
+  const iso = yearRange(state.year);
+  const bas = iso.bas < `${state.year}-01-01` ? iso.bas : `${state.year}-01-01`;
+  const bit = iso.bit > `${state.year}-12-31` ? iso.bit : `${state.year}-12-31`;
   const res = await api('GET', `/api/kayitlar?bas=${bas}&bit=${bit}`);
   state.yearTrips = res.kayitlar;
   state.yearLoaded = state.year;
 }
 
 async function loadAll() {
-  await Promise.all([loadMonth(), state.view === 'hafta' ? loadYear() : null]);
+  await Promise.all([loadMonth(), state.view !== 'ay' ? loadYear() : null]);
 }
 
 async function refresh() {
@@ -140,6 +148,11 @@ function render() {
     }
     return;
   }
+  if (state.view === 'ozet' && !state.personId) {
+    clear($('monthbar'));
+    view.append(renderViewTabs(), renderSummaryView());
+    return;
+  }
   renderMonthBar($('monthbar'), state.month, (m) => {
     state.month = m;
     state.editingId = null;
@@ -156,18 +169,38 @@ function renderViewTabs() {
     onclick: () => switchView(key),
   });
   return el('div', { class: 'view-tabs segmented', role: 'group', 'aria-label': 'Görünüm' },
-    tab('hafta', 'Yıllık hafta planı'), tab('ay', 'Aylık kartlar'));
+    tab('hafta', 'Hafta planı'), tab('ay', 'Aylık'), tab('ozet', 'Özet'));
 }
 
 async function switchView(key) {
   if (state.view === key) return;
   state.view = key;
   writePref('seyahat_gorunum', key);
-  if (key === 'hafta' && state.yearLoaded !== state.year) {
+  if (key !== 'ay' && state.yearLoaded !== state.year) {
     try { await loadYear(); } catch (err) { handleError(err); }
-    state.scrollToWeek = true;
   }
+  if (key === 'hafta') state.scrollToWeek = true;
   render();
+}
+
+function renderSummaryView() {
+  return renderSummary({
+    year: state.year,
+    month: state.sumMonth,
+    trips: state.yearTrips,
+    people: state.people,
+    onYear: async (y) => {
+      state.year = y;
+      try { await loadYear(); } catch (err) { handleError(err); }
+      render();
+    },
+    onMonth: (m) => { state.sumMonth = m; render(); },
+    onPerson: (id) => {
+      if (state.sumMonth) state.month = { y: state.year, m: state.sumMonth };
+      openPerson(id);
+      if (state.sumMonth) refresh();
+    },
+  });
 }
 
 function renderYear() {
@@ -209,9 +242,9 @@ function renderYear() {
       people: state.people, personId: state.people[0]?.id, year: state.year, trips: state.yearTrips,
       onSubmit: (payload, dates, progress) => dialogAction(async () => {
         let done = 0;
-        for (const date of dates) {
+        for (const range of dates) {
           try {
-            await api('POST', '/api/kayitlar', { ...payload, date, status: 'planned' });
+            await api('POST', '/api/kayitlar', { ...payload, ...range, status: 'planned' });
           } catch (err) {
             if (done) { await loadAll().catch(() => {}); render(); }
             throw new ApiError(err.status, `${done} kayıt eklendi, sonra hata oluştu: ${err.message}`);
@@ -272,7 +305,7 @@ function renderCards() {
         el('h3', { text: p.name }),
         el('span', { class: `pill pill-${state.status}`, text: `${trips.length} seyahat` })),
       trips.length
-        ? el('ul', { class: 'mini-list' }, trips.slice(0, 3).map((t) => el('li', {}, dateText(t.date), regionTag(t.region))))
+        ? el('ul', { class: 'mini-list' }, trips.slice(0, 3).map((t) => el('li', {}, dateText(t.date), regionTag(t.region), tripDays(t) > 1 ? daysBadge(tripDays(t)) : null)))
         : el('p', { class: 'muted', text: 'Bu ay kayıt yok.' }),
       trips.length > 3 ? el('p', { class: 'muted small', text: `+${trips.length - 3} kayıt daha` }) : null,
       el('button', { type: 'button', class: 'btn btn-link', text: 'Detayları gör ›', onclick: () => openPerson(p.id) })));
@@ -359,16 +392,17 @@ function renderForm(p) {
   const personSelect = el('select', { name: 'personId', required: true },
     state.people.map((x) => el('option', { value: String(x.id), text: x.name, selected: (editing ? editing.personId : p.id) === x.id })));
   const region = el('input', { name: 'region', required: true, maxLength: 80, autocomplete: 'off', value: editing?.region ?? '' });
-  const date = el('input', { name: 'date', type: 'date', required: true, min: '2000-01-01', max: '2100-12-31', value: editing?.date ?? defaultDate() });
+  const dates = dateRangeInputs(editing?.date ?? defaultDate(), editing?.endDate ?? editing?.date ?? defaultDate());
   const note = el('textarea', { name: 'note', maxLength: 500, rows: 2, value: editing?.note ?? '' });
   const error = el('p', { class: 'form-error', role: 'alert', hidden: true });
 
   const form = el('form', { class: `card trip-form${editing ? ' is-editing' : ''}`, novalidate: true },
     el('h3', { class: 'form-title', text: editing ? 'Kaydı düzenle' : `Yeni ${STATUS_LABEL[state.status].toLocaleLowerCase('tr')} kayıt` }),
-    el('div', { class: 'form-grid' },
+    el('div', { class: 'form-grid form-grid-4' },
       el('label', { class: 'field' }, el('span', { text: 'Kişi' }), personSelect),
       el('label', { class: 'field' }, el('span', { text: 'Bölge' }), region),
-      el('label', { class: 'field' }, el('span', { text: 'Tarih' }), date),
+      el('label', { class: 'field' }, el('span', { text: 'Başlangıç' }), dates.startInput),
+      el('label', { class: 'field' }, el('span', {}, 'Bitiş ', dates.hint), dates.endInput),
       el('label', { class: 'field field-wide' }, el('span', { text: 'Not (isteğe bağlı)' }), note)),
     error,
     el('div', { class: 'form-actions' },
@@ -380,13 +414,13 @@ function renderForm(p) {
     const payload = {
       personId: Number(personSelect.value),
       region: region.value.trim(),
-      date: date.value,
+      date: dates.startInput.value,
+      endDate: dates.endInput.value,
       note: note.value.trim(),
     };
     const problem = !payload.region ? 'Bölge boş olamaz.'
       : [...payload.region].length > 80 ? 'Bölge en fazla 80 karakter olabilir.'
-        : !/^\d{4}-\d{2}-\d{2}$/.test(payload.date) ? 'Geçerli bir tarih seçin.'
-          : [...payload.note].length > 500 ? 'Not en fazla 500 karakter olabilir.' : null;
+        : dates.check() || ([...payload.note].length > 500 ? 'Not en fazla 500 karakter olabilir.' : null);
     if (problem) {
       error.textContent = problem;
       error.hidden = false;
@@ -414,16 +448,15 @@ function renderTable(p) {
   if (!trips.length) {
     return el('div', { class: 'card empty' }, el('p', { class: 'muted', text: `${monthLabel(state.month)} için ${STATUS_LABEL[state.status].toLocaleLowerCase('tr')} seyahat yok.` }));
   }
-  const today = todayISO();
   const edit = canEdit();
   const head = el('tr', {}, el('th', { scope: 'col', text: 'Bölge' }), el('th', { scope: 'col', text: 'Tarih' }),
     el('th', { scope: 'col', text: 'Not' }), edit ? el('th', { scope: 'col', class: 'col-actions', text: 'İşlemler' }) : null);
   const body = el('tbody');
   for (const t of trips) {
-    const overdue = t.status === 'planned' && t.date < today;
+    const overdue = isOverdue(t);
     body.append(el('tr', { class: `${overdue ? 'is-overdue' : ''}${state.editingId === t.id ? ' is-editing' : ''}` },
       el('td', { 'data-label': 'Bölge' }, regionTag(t.region)),
-      el('td', { 'data-label': 'Tarih' }, el('span', {}, dateText(t.date), overdue ? el('span', { class: 'badge-overdue', text: 'Tarihi geçti' }) : null)),
+      el('td', { 'data-label': 'Tarih' }, el('span', {}, rangeText(t), overdue ? el('span', { class: 'badge-overdue', text: 'Tarihi geçti' }) : null)),
       el('td', { 'data-label': 'Not', class: 'note' }, t.note ? t.note : el('span', { class: 'muted', text: '—' })),
       edit ? el('td', { 'data-label': 'İşlemler', class: 'col-actions' }, rowActions(t)) : null));
   }

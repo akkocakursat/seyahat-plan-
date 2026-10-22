@@ -129,6 +129,24 @@ begin
   assert (public.kayitlar_aralik(ed, '2026-02-30', '2026-03-01') ->> 'status')::int = 400;
   assert (public.kayitlar_aralik(null, '2026-01-01', '2026-02-01') ->> 'status')::int = 401;
 
+  -- Başlangıç–bitiş: ay kesişimi, süre korunarak kaydırma, ters sıra ve 365 gün sınırı
+  r := public.kayit_ekle(ed, jsonb_build_object('personId', pid, 'region', 'Uzun yol', 'date', '2026-10-30', 'endDate', '2026-11-02'));
+  assert r -> 'kayit' ->> 'endDate' = '2026-11-02', 'bitiş kaydedilmeli';
+  tid := (r -> 'kayit' ->> 'id')::bigint;
+  ids := ids || tid;
+  assert exists (select 1 from json_array_elements(public.kayitlar_listele(ed, '2026-11') -> 'kayitlar') e where (e ->> 'id')::bigint = tid), 'Kasım';
+  assert exists (select 1 from json_array_elements(public.kayitlar_listele(ed, '2026-10') -> 'kayitlar') e where (e ->> 'id')::bigint = tid), 'Ekim';
+  r := public.kayit_guncelle(ed, tid, '{"date": "2026-12-01"}');
+  assert r -> 'kayit' ->> 'endDate' = '2026-12-04', 'süre korunmalı: ' || (r -> 'kayit' ->> 'endDate');
+  assert (public.kayit_guncelle(ed, tid, '{"endDate": "2026-11-30"}') ->> 'status')::int = 400, 'ters sıra';
+  assert public.kayit_guncelle(ed, tid, '{"endDate": "2026-12-02"}') -> 'kayit' ->> 'endDate' = '2026-12-02';
+  assert (public.kayit_ekle(ed, jsonb_build_object('personId', pid, 'region', 'X', 'date', '2026-10-05', 'endDate', '2026-10-04')) ->> 'status')::int = 400;
+  assert (public.kayit_ekle(ed, jsonb_build_object('personId', pid, 'region', 'X', 'date', '2026-01-01', 'endDate', '2027-01-01')) ->> 'status')::int = 400;
+  assert (public.kayit_ekle(ed, jsonb_build_object('personId', pid, 'region', 'X', 'date', '2026-10-05', 'endDate', '2026-02-30')) ->> 'status')::int = 400;
+  r := public.kayit_ekle(ed, jsonb_build_object('personId', pid, 'region', 'Tek gün', 'date', '2026-10-06'));
+  assert r -> 'kayit' ->> 'endDate' = '2026-10-06', 'bitiş verilmezse tek gün';
+  ids := ids || (r -> 'kayit' ->> 'id')::bigint;
+
   -- Geçersiz girdiler
   foreach bad in array array[
     jsonb_build_object('personId', pid, 'region', 'Bursa', 'date', '2026-02-30'),
@@ -177,7 +195,7 @@ begin
   r := public.paylasim(key_old, '2026-10');
   assert r ->> 'name' = 'Selim Kutlubay';
   assert (select array_agg(k order by k) from json_object_keys(r) k) = array['kayitlar', 'name'];
-  assert (select bool_and((select array_agg(k order by k) from json_object_keys(e) k) = array['date', 'note', 'region', 'status'])
+  assert (select bool_and((select array_agg(k order by k) from json_object_keys(e) k) = array['date', 'endDate', 'note', 'region', 'status'])
           from json_array_elements(r -> 'kayitlar') e), 'yalnızca region/date/note/status';
   assert not exists (select 1 from json_array_elements(r -> 'kayitlar') e where e ->> 'region' = 'Sınır'), 'başka kişinin kaydı sızmamalı';
   assert exists (select 1 from json_array_elements(r -> 'kayitlar') e where e ->> 'region' = 'Trabzon');

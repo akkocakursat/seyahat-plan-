@@ -1,6 +1,8 @@
 // Yıllık hafta planı: ISO haftaları (1–52/53) satırlarda, kişiler sütunlarda.
 // Kullanıcı verisi yalnızca textContent / createElement ile yazılır.
-import { el, clear, ApiError, STATUS_LABEL, todayISO, formatDate } from './ortak.js';
+import {
+  el, clear, ApiError, STATUS_LABEL, todayISO, formatDate, tripDays, isOverdue, dateRangeInputs, addDaysISO, daysBadge,
+} from './ortak.js';
 
 const DAY = 86_400_000;
 const GUN_KISA = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'];
@@ -43,6 +45,16 @@ function weekRangeLabel(year, week) {
 }
 
 const dayLabel = (iso) => `${GUN_KISA[weekday(fromISO(iso))]} ${formatDate(iso)}`;
+const tripEnd = (t) => t.endDate || t.date;
+const tripLabel = (t) => (tripEnd(t) === t.date ? dayLabel(t.date) : `${dayLabel(t.date)} – ${dayLabel(tripEnd(t))}`);
+
+// Seyahatin kapsadığı ISO haftaları (çok günlük seyahat birden fazla haftaya yayılabilir).
+export function tripWeeks(t) {
+  const out = [];
+  const first = isoWeekOf(t.date);
+  for (let d = isoWeekStart(first.year, first.week); toISO(d) <= tripEnd(t); d = addDays(d, 7)) out.push(isoWeekOf(toISO(d)));
+  return out;
+}
 
 // "1-5, 35, 37" ya da "1-2-3-4-5-35-37": iki parçalı tire aralık, daha uzun zincir liste sayılır.
 export function parseWeeks(text, max) {
@@ -100,6 +112,7 @@ const noteInput = (value = '') => el('textarea', { name: 'note', maxLength: 500,
 const personSelect = (people, selected) => el('select', { name: 'personId' },
   people.map((p) => el('option', { value: String(p.id), text: p.name, selected: p.id === selected })));
 const errorBox = () => el('p', { class: 'form-error', role: 'alert', hidden: true });
+const rangeEndField = (dates) => el('label', { class: 'field' }, el('span', {}, 'Bitiş ', dates.hint), dates.endInput);
 
 function checkTrip(region, note) {
   if (!region) return 'Bölge boş olamaz.';
@@ -114,22 +127,25 @@ export function openAddDialog({ people, personId, year, week, onSubmit }) {
   const today = todayISO();
   const def = days.includes(today) ? today : days[0];
   const who = personSelect(people, personId);
-  const day = el('select', { name: 'date' }, days.map((d) => el('option', { value: d, text: dayLabel(d), selected: d === def })));
+  const dates = dateRangeInputs(def, def);
   const region = regionInput();
   const note = noteInput();
   const error = errorBox();
   const submit = el('button', { type: 'submit', class: 'btn btn-primary', text: 'Plana ekle' });
   const form = el('form', { class: 'dlg-form', novalidate: true },
     el('p', { class: 'dlg-sub', text: `${week}. hafta · ${weekRangeLabel(year, week)} ${year}` }),
-    el('div', { class: 'form-grid form-grid-2' }, field('Kişi', who), field('Gün', day), field('Bölge', region, 'field-wide'),
-      field('Not (isteğe bağlı)', note, 'field-wide')),
+    el('div', { class: 'form-grid form-grid-2' }, field('Kişi', who), field('Bölge', region),
+      field('Başlangıç', dates.startInput), rangeEndField(dates), field('Not (isteğe bağlı)', note, 'field-wide')),
     error,
     el('div', { class: 'form-actions' }, submit));
   const dlg = openDialog('Seyahat planla', form);
   form.addEventListener('submit', (ev) => {
     ev.preventDefault();
-    const payload = { personId: Number(who.value), region: region.value.trim(), date: day.value, note: note.value.trim(), status: 'planned' };
-    const problem = checkTrip(payload.region, payload.note);
+    const payload = {
+      personId: Number(who.value), region: region.value.trim(), date: dates.startInput.value, endDate: dates.endInput.value,
+      note: note.value.trim(), status: 'planned',
+    };
+    const problem = checkTrip(payload.region, payload.note) || dates.check();
     if (problem) { error.textContent = problem; error.hidden = false; return; }
     submitIn(dlg, submit, error, () => onSubmit(payload)).catch(() => dlg.close());
   });
@@ -140,7 +156,7 @@ export function openAddDialog({ people, personId, year, week, onSubmit }) {
 export function openTripDialog({ trip, people, editable, onStatus, onUpdate, onDelete, onOpenMonth }) {
   const who = people.find((p) => p.id === trip.personId);
   const { year, week } = isoWeekOf(trip.date);
-  const overdue = trip.status === 'planned' && trip.date < todayISO();
+  const overdue = isOverdue(trip);
   const body = el('div', { class: 'dlg-form' });
   const dlg = openDialog(trip.region, body);
 
@@ -151,7 +167,8 @@ export function openTripDialog({ trip, people, editable, onStatus, onUpdate, onD
       el('dl', { class: 'trip-facts' },
         el('dt', { text: 'Kişi' }), el('dd', { text: who ? who.name : '—' }),
         el('dt', { text: 'Tarih' }), el('dd', {},
-          el('span', { class: 'mono', text: dayLabel(trip.date) }), el('span', { class: 'muted small', text: ` · ${week}. hafta ${year}` })),
+          el('span', { class: 'mono', text: tripLabel(trip) }), ' ', daysBadge(tripDays(trip)),
+          el('span', { class: 'muted small', text: ` · ${week}. hafta ${year}` })),
         el('dt', { text: 'Durum' }), el('dd', {},
           el('span', { class: `pill pill-${trip.status}`, text: STATUS_LABEL[trip.status] }),
           overdue ? el('span', { class: 'badge-overdue', text: 'Tarihi geçti' }) : null),
@@ -177,19 +194,22 @@ export function openTripDialog({ trip, people, editable, onStatus, onUpdate, onD
   const showEdit = () => {
     const sel = personSelect(people, trip.personId);
     const region = regionInput(trip.region);
-    const date = el('input', { name: 'date', type: 'date', required: true, min: '2000-01-01', max: '2100-12-31', value: trip.date });
+    const dates = dateRangeInputs(trip.date, tripEnd(trip));
     const note = noteInput(trip.note);
     const error = errorBox();
     const save = el('button', { type: 'submit', class: 'btn btn-primary', text: 'Güncelle' });
     const form = el('form', { novalidate: true },
-      el('div', { class: 'form-grid form-grid-2' }, field('Kişi', sel), field('Tarih', date), field('Bölge', region, 'field-wide'),
-        field('Not (isteğe bağlı)', note, 'field-wide')),
+      el('div', { class: 'form-grid form-grid-2' }, field('Kişi', sel), field('Bölge', region),
+        field('Başlangıç', dates.startInput), rangeEndField(dates), field('Not (isteğe bağlı)', note, 'field-wide')),
       error,
       el('div', { class: 'form-actions' }, save, el('button', { type: 'button', class: 'btn btn-ghost-dark', text: 'Vazgeç', onclick: showDetails })));
     form.addEventListener('submit', (ev) => {
       ev.preventDefault();
-      const payload = { personId: Number(sel.value), region: region.value.trim(), date: date.value, note: note.value.trim() };
-      const problem = checkTrip(payload.region, payload.note) || (!/^\d{4}-\d{2}-\d{2}$/.test(payload.date) ? 'Geçerli bir tarih seçin.' : null);
+      const payload = {
+        personId: Number(sel.value), region: region.value.trim(), date: dates.startInput.value, endDate: dates.endInput.value,
+        note: note.value.trim(),
+      };
+      const problem = checkTrip(payload.region, payload.note) || dates.check();
       if (problem) { error.textContent = problem; error.hidden = false; return; }
       submitIn(dlg, save, error, () => onUpdate(trip, payload)).catch(() => dlg.close());
     });
@@ -209,14 +229,15 @@ export function openBulkDialog({ people, personId, year, trips, onSubmit }) {
   const region = regionInput();
   const note = noteInput();
   const dayOfWeek = el('select', { name: 'gun' }, GUN_ADI.map((g, i) => el('option', { value: String(i), text: g })));
+  const length = el('input', { name: 'gunSayisi', type: 'number', min: '1', max: '365', step: '1', value: '1', inputMode: 'numeric' });
   const weeksText = el('input', { name: 'haftalar', autocomplete: 'off', placeholder: 'Örn. 1-5, 35, 37 ya da 1-2-3-4-5-35-37' });
   const summary = el('p', { class: 'muted small', 'aria-live': 'polite' });
   const grid = el('div', { class: 'week-picker', role: 'group', 'aria-label': `${year} haftaları` });
   const error = errorBox();
   const submit = el('button', { type: 'submit', class: 'btn btn-primary', text: 'Seçili haftalara planla' });
 
-  const busyWeeks = () => new Set(trips.filter((t) => t.personId === Number(who.value) && isoWeekOf(t.date).year === year)
-    .map((t) => isoWeekOf(t.date).week));
+  const busyWeeks = () => new Set(trips.filter((t) => t.personId === Number(who.value))
+    .flatMap(tripWeeks).filter((w) => w.year === year).map((w) => w.week));
 
   const paint = () => {
     const busy = busyWeeks();
@@ -262,8 +283,8 @@ export function openBulkDialog({ people, personId, year, trips, onSubmit }) {
 
   const form = el('form', { class: 'dlg-form', novalidate: true },
     el('p', { class: 'dlg-sub', text: `${year} · bir kişi için seçtiğiniz her haftaya ayrı bir planlanan kayıt eklenir.` }),
-    el('div', { class: 'form-grid form-grid-3' }, field('Kişi', who), field('Bölge', region), field('Gün', dayOfWeek),
-      field('Not (isteğe bağlı)', note, 'field-wide')),
+    el('div', { class: 'form-grid form-grid-4' }, field('Kişi', who), field('Bölge', region), field('Başlangıç günü', dayOfWeek),
+      field('Kaç gün', length), field('Not (isteğe bağlı)', note, 'field-wide')),
     field('Haftalar', weeksText, 'field-wide'),
     grid,
     el('div', { class: 'picker-foot' }, summary,
@@ -278,9 +299,15 @@ export function openBulkDialog({ people, personId, year, trips, onSubmit }) {
     ev.preventDefault();
     if (!applyText()) return;
     const payload = { personId: Number(who.value), region: region.value.trim(), note: note.value.trim() };
-    const problem = checkTrip(payload.region, payload.note) || (selected.size ? null : 'En az bir hafta seçin.');
+    const n = Number(length.value);
+    const problem = checkTrip(payload.region, payload.note)
+      || (Number.isInteger(n) && n >= 1 && n <= 365 ? null : 'Gün sayısı 1 ile 365 arasında olmalı.')
+      || (selected.size ? null : 'En az bir hafta seçin.');
     if (problem) { error.textContent = problem; error.hidden = false; return; }
-    const dates = [...selected].sort((a, b) => a - b).map((w) => weekDays(year, w)[Number(dayOfWeek.value)]);
+    const dates = [...selected].sort((a, b) => a - b).map((w) => {
+      const start = weekDays(year, w)[Number(dayOfWeek.value)];
+      return { date: start, endDate: addDaysISO(start, n - 1) };
+    });
     submitIn(dlg, submit, error, () => onSubmit(payload, dates, (done) => { submit.textContent = `Ekleniyor… ${done}/${dates.length}`; }))
       .catch(() => dlg.close());
   });
@@ -294,16 +321,20 @@ export function renderWeekPlan({ year, trips, people, editable, showDone, onYear
   const now = isoWeekOf(today);
   const thisYear = new Date().getFullYear();
 
+  // Çok günlük seyahat kapsadığı her haftada görünür; ilk hafta dışındakiler "devam" olarak işaretlenir.
   const byCell = new Map();
+  const yearTrips = [];
   for (const t of trips) {
+    const weeks = tripWeeks(t);
+    if (weeks.some((w) => w.year === year)) yearTrips.push(t);
     if (!showDone && t.status === 'done') continue;
-    const { year: y, week } = isoWeekOf(t.date);
-    if (y !== year) continue;
-    const key = `${t.personId}:${week}`;
-    if (!byCell.has(key)) byCell.set(key, []);
-    byCell.get(key).push(t);
+    weeks.forEach((w, i) => {
+      if (w.year !== year) return;
+      const key = `${t.personId}:${w.week}`;
+      if (!byCell.has(key)) byCell.set(key, []);
+      byCell.get(key).push({ t, cont: i > 0 });
+    });
   }
-  const yearTrips = trips.filter((t) => isoWeekOf(t.date).year === year);
 
   const bar = el('div', { class: 'weekplan-bar' },
     el('div', { class: 'month-nav' },
@@ -349,16 +380,20 @@ export function renderWeekPlan({ year, trips, people, editable, showDone, onYear
         el('span', { class: 'wk-range', text: weekRangeLabel(year, w) }),
         isNow ? el('span', { class: 'wk-now', text: 'bu hafta' }) : null),
       people.map((p) => {
-        const list = (byCell.get(`${p.id}:${w}`) || []).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.id - b.id));
+        const list = (byCell.get(`${p.id}:${w}`) || [])
+          .sort((a, b) => (a.t.date < b.t.date ? -1 : a.t.date > b.t.date ? 1 : a.t.id - b.t.id));
         return el('td', { class: 'wk-cell' },
-          list.map((t) => {
-            const overdue = t.status === 'planned' && t.date < today;
+          list.map(({ t, cont }) => {
+            const days = tripDays(t);
             return el('button', {
               type: 'button',
-              class: `chip chip-${overdue ? 'overdue' : t.status}`,
-              title: `${t.region} · ${dayLabel(t.date)}${t.note ? ` · ${t.note}` : ''}`,
+              class: `chip chip-${isOverdue(t) ? 'overdue' : t.status}${cont ? ' chip-cont' : ''}`,
+              title: `${t.region} · ${tripLabel(t)} · ${days} gün${t.note ? ` · ${t.note}` : ''}`,
               onclick: () => onTrip(t),
-            }, el('span', { class: 'chip-day', text: GUN_KISA[weekday(fromISO(t.date))] }), el('span', { class: 'chip-region', text: t.region }));
+            },
+            el('span', { class: 'chip-day', text: cont ? '↳' : GUN_KISA[weekday(fromISO(t.date))] }),
+            el('span', { class: 'chip-region', text: t.region }),
+            days > 1 && !cont ? el('span', { class: 'chip-days', text: `${days}g` }) : null);
           }),
           editable ? el('button', {
             type: 'button', class: 'cell-add', text: '+', 'aria-label': `${p.name} için ${w}. haftaya plan ekle`,

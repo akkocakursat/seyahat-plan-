@@ -82,6 +82,75 @@ export function dateText(iso) {
   return el('time', { class: 'mono', datetime: iso, text: formatDate(iso) });
 }
 
+const isoMs = (iso) => Date.parse(`${iso}T00:00:00Z`);
+
+// Seyahatin gün sayısı (başlangıç ve bitiş dahil). Bitişi olmayan eski kayıtlar tek gün sayılır.
+export function tripDays(t) {
+  return Math.round((isoMs(t.endDate || t.date) - isoMs(t.date)) / 86_400_000) + 1;
+}
+
+export function addDaysISO(iso, n) {
+  return new Date(isoMs(iso) + n * 86_400_000).toISOString().slice(0, 10);
+}
+
+export const daysBetween = (start, end) => Math.round((isoMs(end) - isoMs(start)) / 86_400_000) + 1;
+
+// Tarihi geçmiş plan: bitişi bugünden önce olduğu halde hâlâ Planlanan'da duran kayıt.
+export const isOverdue = (t) => t.status === 'planned' && (t.endDate || t.date) < todayISO();
+
+export function daysBadge(n) {
+  return el('span', { class: 'days', text: `${n} gün` });
+}
+
+// "21.10.2026" ya da "21.10.2026 – 23.10.2026" + gün sayısı
+export function rangeText(t) {
+  const end = t.endDate || t.date;
+  return el('span', { class: 'range' },
+    dateText(t.date),
+    end !== t.date ? el('span', { class: 'range-sep', text: '–' }) : null,
+    end !== t.date ? dateText(end) : null,
+    daysBadge(tripDays(t)));
+}
+
 // Veri katmanı: Express sürümünde ./arka-uc.js sunucu API'sine, GitHub Pages sürümünde Supabase'e bağlanır.
 export { api, setCsrf, yollar, paylasimAnahtari } from './arka-uc.js';
 export { ApiError } from './hata.js';
+
+const ISO_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+// Başlangıç + bitiş tarihi alanları ve canlı "x gün" bilgisi. Başlangıç değişince süre korunur.
+export function dateRangeInputs(start, end) {
+  const startInput = el('input', { name: 'date', type: 'date', required: true, min: '2000-01-01', max: '2100-12-31', value: start });
+  const endInput = el('input', { name: 'endDate', type: 'date', required: true, min: start, max: '2100-12-31', value: end || start });
+  const hint = el('span', { class: 'days-hint', 'aria-live': 'polite' });
+  let prevStart = start;
+  const update = () => {
+    if (ISO_RE.test(startInput.value)) endInput.min = startInput.value;
+    const ok = ISO_RE.test(startInput.value) && ISO_RE.test(endInput.value) && endInput.value >= startInput.value;
+    hint.textContent = ok ? `${daysBetween(startInput.value, endInput.value)} gün` : '';
+  };
+  startInput.addEventListener('change', () => {
+    if (ISO_RE.test(prevStart) && ISO_RE.test(endInput.value) && ISO_RE.test(startInput.value) && endInput.value >= prevStart) {
+      endInput.value = addDaysISO(startInput.value, daysBetween(prevStart, endInput.value) - 1);
+    } else if (ISO_RE.test(startInput.value) && (!ISO_RE.test(endInput.value) || endInput.value < startInput.value)) {
+      endInput.value = startInput.value;
+    }
+    prevStart = startInput.value;
+    update();
+  });
+  endInput.addEventListener('input', update);
+  endInput.addEventListener('change', update);
+  update();
+  return {
+    startInput,
+    endInput,
+    hint,
+    check() {
+      if (!ISO_RE.test(startInput.value)) return 'Geçerli bir başlangıç tarihi seçin.';
+      if (!ISO_RE.test(endInput.value)) return 'Geçerli bir bitiş tarihi seçin.';
+      if (endInput.value < startInput.value) return 'Bitiş tarihi başlangıç tarihinden önce olamaz.';
+      if (daysBetween(startInput.value, endInput.value) > 365) return 'Bir seyahat en fazla 365 gün olabilir.';
+      return null;
+    },
+  };
+}

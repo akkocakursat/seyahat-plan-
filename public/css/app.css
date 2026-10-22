@@ -375,3 +375,53 @@ button, input, select, textarea { font: inherit; color: inherit; }
   .week-picker { grid-template-columns: repeat(7, minmax(0, 1fr)); }
   .dlg-inner { padding: 16px; }
 }
+
+/* ---------- Başlangıç–bitiş ve gün sayısı ---------- */
+.form-grid-4 { grid-template-columns: 1fr 1.3fr 1fr 1fr; }
+.days-hint { color: var(--accent); font-weight: 600; }
+.range { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 4px 6px; }
+.range-sep { color: var(--faint); }
+.days {
+  display: inline-block; padding: 0 7px; border-radius: 999px; background: var(--soft); border: 1px solid var(--line);
+  color: var(--muted); font-size: 12px; font-weight: 500; white-space: nowrap;
+}
+.chip-days { margin-left: auto; flex: none; font-size: 11px; font-weight: 600; opacity: .8; }
+.chip-cont { opacity: .75; border-style: dashed; }
+
+/* ---------- Özet ---------- */
+.summary-view { display: flex; flex-direction: column; gap: 12px; }
+.period-select { padding: 7px 10px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface); }
+.summary-title { font-size: 16px; margin-top: 8px; }
+.summary-card { overflow: hidden; }
+.summary-scroll { overflow-x: auto; }
+.summary { width: 100%; border-collapse: collapse; font-size: 14px; }
+.summary th, .summary td { padding: 12px 14px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: middle; }
+.summary thead th { font-size: 13px; font-weight: 500; color: var(--muted); white-space: nowrap; }
+.summary tbody th { font-weight: 600; white-space: nowrap; }
+.summary .num { text-align: right; font-variant-numeric: tabular-nums; }
+.summary .big { display: block; font-weight: 600; white-space: nowrap; }
+.summary .sub { display: block; font-size: 12px; color: var(--faint); white-space: nowrap; }
+.summary .sub.warn { color: var(--danger); }
+.summary .total-row th, .summary .total-row td { background: var(--soft); border-bottom: 0; }
+.summary tfoot .total-row th, .summary tfoot .total-row td { border-top: 1px solid var(--line-strong); }
+.summary .strong { font-weight: 600; }
+.summary .zero { color: var(--line-strong); }
+.link-name { border: 0; background: none; padding: 0; color: var(--accent); font-weight: 600; cursor: pointer; text-align: left; }
+.link-name:hover { text-decoration: underline; }
+.ratio-cell { min-width: 150px; }
+.ratio { display: flex; align-items: center; gap: 10px; }
+.bar { flex: 1 1 auto; height: 8px; border-radius: 999px; background: var(--planned-soft); border: 1px solid #fed7aa; overflow: hidden; min-width: 60px; }
+.bar-fill { display: block; height: 100%; background: var(--done-line); border-radius: 999px; }
+.pct { font-weight: 600; font-variant-numeric: tabular-nums; min-width: 40px; text-align: right; }
+.monthly th, .monthly td { padding: 10px 10px; }
+.summary-note { margin-top: -4px; }
+
+@media (max-width: 900px) {
+  .form-grid-4 { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 720px) {
+  .form-grid-4 { grid-template-columns: minmax(0, 1fr); }
+  .summary th, .summary td { padding: 10px; }
+  .summary { min-width: 560px; }
+  .monthly { min-width: 720px; }
+}
