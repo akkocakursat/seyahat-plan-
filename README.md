@@ -260,7 +260,7 @@ Aynı arayüz, sunucu gerektirmeden GitHub Pages'te de yayınlanır; veriler Sup
   Anahtar çerezle değil istek gövdesiyle gönderildiği için CSRF saldırısı mümkün değildir.
 - Kaba kuvvet ve istek sınırları sunucu sürümüyle aynıdır (kullanıcı adına 15 dk'da 8, IP'den 30 hatalı deneme;
   genel dakikada 300, paylaşım linki dakikada 30); IP, Supabase'in `cf-connecting-ip` başlığından alınır.
-- Girdi doğrulama, denetim kaydı ve paylaşım linkinin yalnızca `region/date/note/status` döndürmesi sunucu
+- Girdi doğrulama, denetim kaydı ve paylaşım linkinin yalnızca `region/date/endDate/note/status` döndürmesi sunucu
   sürümüyle aynıdır.
 - Silinen kayıtlar `deleted_at` ile işaretlenir; listelerde, sayılarda ve paylaşım linkinde görünmez, ama
   veritabanında kalır (yanlışlıkla silmede geri alınabilir). Çıkışta ve parola değişiminde oturumların süresi
