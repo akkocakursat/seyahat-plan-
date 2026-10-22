@@ -315,13 +315,12 @@ export function renderWeekPlan({ year, trips, people, editable, showDone, onYear
     el('label', { class: 'check' },
       el('input', { type: 'checkbox', checked: showDone, onchange: (ev) => onShowDone(ev.target.checked) }),
       'Gerçekleşenleri göster'),
-    editable ? el('button', { type: 'button', class: 'btn btn-primary', text: '+ Haftalara toplu planla', onclick: onBulk }) : null);
+    editable ? el('button', { type: 'button', class: 'btn btn-primary', text: '+ Toplu planla', onclick: onBulk }) : null);
 
   const legend = el('div', { class: 'weekplan-legend' },
     el('span', {}, el('i', { class: 'swatch swatch-planned' }), 'Planlanan'),
     el('span', {}, el('i', { class: 'swatch swatch-done' }), 'Gerçekleşen'),
-    el('span', {}, el('i', { class: 'swatch swatch-overdue' }), 'Tarihi geçti'),
-    editable ? el('span', { class: 'muted' }, 'Bir hücredeki + ile o haftaya plan ekleyin; kayda tıklayıp düzenleyin.') : null);
+    el('span', {}, el('i', { class: 'swatch swatch-overdue' }), 'Tarihi geçti'));
 
   const head = el('tr', {},
     el('th', { scope: 'col', class: 'wk-col', text: 'Hafta' }),
@@ -330,9 +329,7 @@ export function renderWeekPlan({ year, trips, people, editable, showDone, onYear
       return el('th', { scope: 'col', class: 'person-col' },
         el('span', { class: 'pc-name', text: p.name }),
         el('span', { class: 'pc-count' },
-          el('span', { class: 'c-planned', text: `${mine.filter((t) => t.status === 'planned').length} plan` }),
-          ' · ',
-          el('span', { class: 'c-done', text: `${mine.filter((t) => t.status === 'done').length} gerçekleşen` })));
+          `${mine.filter((t) => t.status === 'planned').length} planlı · ${mine.filter((t) => t.status === 'done').length} gerçekleşen`));
     }));
 
   const body = el('tbody');
