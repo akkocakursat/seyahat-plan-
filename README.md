@@ -247,6 +247,12 @@ Aynı arayüz, sunucu gerektirmeden GitHub Pages'te de yayınlanır; veriler Sup
   genel dakikada 300, paylaşım linki dakikada 30); IP, Supabase'in `cf-connecting-ip` başlığından alınır.
 - Girdi doğrulama, denetim kaydı ve paylaşım linkinin yalnızca `region/date/note/status` döndürmesi sunucu
   sürümüyle aynıdır.
+- Silinen kayıtlar `deleted_at` ile işaretlenir; listelerde, sayılarda ve paylaşım linkinde görünmez, ama
+  veritabanında kalır (yanlışlıkla silmede geri alınabilir). Çıkışta ve parola değişiminde oturumların süresi
+  hemen sona erdirilir. Kalıcı temizlik gerekirse SQL düzenleyicisinden yapılabilir:
+  `delete from seyahat.trips where deleted_at < now() - interval '90 days';`
+- Supabase güvenlik denetimi (Advisors) API fonksiyonları için "anon çalıştırabilir SECURITY DEFINER" uyarısı
+  verir: bu tasarım gereğidir — fonksiyonlar giriş yapmamış tarayıcıdan çağrılır ve oturumu kendileri denetler.
 - `site/yapilandirma.json` içindeki anahtar Supabase'in **yayımlanabilir (publishable)** anahtarıdır; tarayıcıda
   görünmesi tasarım gereğidir ve tek başına hiçbir tabloya erişim vermez. `service_role` anahtarı hiçbir yerde
   kullanılmaz.

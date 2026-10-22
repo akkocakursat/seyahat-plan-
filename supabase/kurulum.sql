@@ -56,6 +56,8 @@ create table if not exists seyahat.trips (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+-- Silinen kayıtlar yalnızca işaretlenir (geri alınabilir, denetim izi korunur); hiçbir sorguda görünmez.
+alter table seyahat.trips add column if not exists deleted_at timestamptz;
 create index if not exists trips_date on seyahat.trips (date);
 create index if not exists trips_person on seyahat.trips (person_id, date);
 create index if not exists trips_created_by on seyahat.trips (created_by);
@@ -354,7 +356,7 @@ begin
   update seyahat.users
   set password_hash = extensions.crypt(p_password, extensions.gen_salt('bf', 12)), role = p_role, updated_at = now()
   where id = v_id;
-  delete from seyahat.sessions where user_id = v_id;
+  update seyahat.sessions set expires_at = now() where user_id = v_id and expires_at > now();
   return format('"%s" kullanıcısının parolası ve rolü (%s) güncellendi; açık oturumları kapatıldı.', p_username, p_role);
 end $$;
 
@@ -410,12 +412,11 @@ begin
     return seyahat.err(401, 'Kullanıcı adı veya parola hatalı.');
   end if;
 
-  delete from seyahat.rate_counters where key = 'giris-k:' || v_key;
+  update seyahat.rate_counters set count = 0 where key = 'giris-k:' || v_key;
   perform seyahat.rl_undo('giris-ip:' || v_ip);
-  delete from seyahat.sessions where expires_at <= now();
-  delete from seyahat.rate_counters where reset_at <= now() - interval '1 hour';
   if p_old_token is not null then
-    delete from seyahat.sessions where token_hash = seyahat.sha256_hex(p_old_token);
+    update seyahat.sessions set expires_at = now()
+    where token_hash = seyahat.sha256_hex(p_old_token) and expires_at > now();
   end if;
 
   -- Her girişte yeni oturum; veritabanında yalnızca özeti saklanır.
@@ -445,7 +446,8 @@ declare
 begin
   v_user := seyahat.auth(p_token);
   if v_user.id is null then return seyahat.err(401, 'Oturum gerekli.'); end if;
-  delete from seyahat.sessions where token_hash = seyahat.sha256_hex(p_token);
+  -- Oturum hemen sona erdirilir (süresi şimdiye çekilir).
+  update seyahat.sessions set expires_at = now() where token_hash = seyahat.sha256_hex(p_token);
   perform seyahat.audit_log(v_user, 'cikis');
   return json_build_object('ok', true);
 end $$;
@@ -468,7 +470,7 @@ begin
   return json_build_object('kayitlar', coalesce((
     select json_agg(seyahat.trip_json(t) order by t.date, t.id)
     from seyahat.trips t
-    where v_from is null or t.date between v_from and v_to), '[]'::json));
+    where t.deleted_at is null and (v_from is null or t.date between v_from and v_to)), '[]'::json));
 end $$;
 
 create or replace function public.kayit_ekle(p_token text, p_kayit jsonb) returns json
@@ -508,7 +510,7 @@ begin
   v_user := seyahat.auth(p_token);
   if v_user.id is null then return seyahat.err(401, 'Oturum gerekli.'); end if;
   if v_user.role not in ('admin', 'editor') then return seyahat.err(403, 'Bu işlem için yetkiniz yok.'); end if;
-  select * into v_before from seyahat.trips where id = p_id for update;
+  select * into v_before from seyahat.trips where id = p_id and deleted_at is null for update;
   if v_before.id is null then return seyahat.err(404, 'Kayıt bulunamadı.'); end if;
   v := seyahat.validate_trip(p_degisiklik, true);
   if v ? 'error' then return seyahat.err(400, v ->> 'error'); end if;
@@ -540,7 +542,9 @@ begin
   v_user := seyahat.auth(p_token);
   if v_user.id is null then return seyahat.err(401, 'Oturum gerekli.'); end if;
   if v_user.role not in ('admin', 'editor') then return seyahat.err(403, 'Bu işlem için yetkiniz yok.'); end if;
-  delete from seyahat.trips where id = p_id returning * into v_before;
+  update seyahat.trips set deleted_at = now(), updated_at = now()
+  where id = p_id and deleted_at is null
+  returning * into v_before;
   if v_before.id is null then return seyahat.err(404, 'Kayıt bulunamadı.'); end if;
   perform seyahat.audit_log(v_user, 'kayit_sil', seyahat.trip_json(v_before));
   return json_build_object('ok', true);
@@ -568,9 +572,9 @@ begin
     select json_agg(
       jsonb_strip_nulls(jsonb_build_object(
         'id', p.id, 'name', p.name,
-        'planned', (select count(*) from seyahat.trips t where t.person_id = p.id and t.status = 'planned'
+        'planned', (select count(*) from seyahat.trips t where t.person_id = p.id and t.status = 'planned' and t.deleted_at is null
                       and (v_from is null or t.date between v_from and v_to)),
-        'done', (select count(*) from seyahat.trips t where t.person_id = p.id and t.status = 'done'
+        'done', (select count(*) from seyahat.trips t where t.person_id = p.id and t.status = 'done' and t.deleted_at is null
                    and (v_from is null or t.date between v_from and v_to)),
         'shareKey', case when v_keys then p.share_key end))
       order by p.id)
@@ -622,7 +626,7 @@ begin
     select json_agg(json_build_object('region', t.region, 'date', to_char(t.date, 'YYYY-MM-DD'),
                                       'note', t.note, 'status', t.status) order by t.date, t.id)
     from seyahat.trips t
-    where t.person_id = v_person.id and (v_from is null or t.date between v_from and v_to)), '[]'::json));
+    where t.person_id = v_person.id and t.deleted_at is null and (v_from is null or t.date between v_from and v_to)), '[]'::json));
 end $$;
 
 -- ---------------------------------------------------------------- Yetkiler
@@ -640,16 +644,19 @@ revoke execute on function public.kisiler_listele(text, text) from public;
 revoke execute on function public.link_yenile(text, bigint) from public;
 revoke execute on function public.paylasim(text, text) from public;
 
-grant execute on function public.giris(text, text, text) to anon, authenticated;
-grant execute on function public.oturum(text) to anon, authenticated;
-grant execute on function public.cikis(text) to anon, authenticated;
-grant execute on function public.kayitlar_listele(text, text) to anon, authenticated;
-grant execute on function public.kayit_ekle(text, jsonb) to anon, authenticated;
-grant execute on function public.kayit_guncelle(text, bigint, jsonb) to anon, authenticated;
-grant execute on function public.kayit_sil(text, bigint) to anon, authenticated;
-grant execute on function public.kisiler_listele(text, text) to anon, authenticated;
-grant execute on function public.link_yenile(text, bigint) to anon, authenticated;
-grant execute on function public.paylasim(text, text) to anon, authenticated;
+-- Supabase Auth kullanılmadığı için yalnızca anon rolü çağırabilir.
+revoke execute on all functions in schema public from authenticated;
+
+grant execute on function public.giris(text, text, text) to anon;
+grant execute on function public.oturum(text) to anon;
+grant execute on function public.cikis(text) to anon;
+grant execute on function public.kayitlar_listele(text, text) to anon;
+grant execute on function public.kayit_ekle(text, jsonb) to anon;
+grant execute on function public.kayit_guncelle(text, bigint, jsonb) to anon;
+grant execute on function public.kayit_sil(text, bigint) to anon;
+grant execute on function public.kisiler_listele(text, text) to anon;
+grant execute on function public.link_yenile(text, bigint) to anon;
+grant execute on function public.paylasim(text, text) to anon;
 
 
 -- ---------------------------------------------------------------- İlk veriler

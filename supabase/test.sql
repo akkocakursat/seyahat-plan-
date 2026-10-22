@@ -98,6 +98,8 @@ begin
   assert r -> 'kayit' ->> 'region' = 'Manisa' and (r -> 'kayit' ->> 'personId')::bigint = pid2 and r -> 'kayit' ->> 'date' = '2026-10-16', 'düzenleme';
   assert public.kayit_sil(ed, tid) ->> 'ok' = 'true', 'silme';
   assert (public.kayit_sil(ed, tid) ->> 'status')::int = 404, 'olmayan kayıt silinemez';
+  assert not exists (select 1 from json_array_elements(public.kayitlar_listele(ed) -> 'kayitlar') e
+                    where (e ->> 'id')::bigint = tid), 'silinen kayıt listelenmemeli';
   assert (public.kayit_guncelle(ed, tid, '{"status": "done"}') ->> 'status')::int = 404;
 
   -- Ay sınırları: 30 Eylül ve 1 Kasım hariç, 1 ve 31 Ekim dahil
@@ -249,6 +251,7 @@ begin
   assert exists (select 1 from seyahat.audit where action = 'kayit_ekle');
   assert exists (select 1 from seyahat.audit where action = 'kayit_guncelle');
   assert exists (select 1 from seyahat.audit where action = 'kayit_sil');
+  assert exists (select 1 from seyahat.trips where deleted_at is not null), 'silinen kayıt işaretli kalmalı';
   assert exists (select 1 from seyahat.audit where action = 'link_yenile');
   assert (select bool_and(token_hash ~ '^[0-9a-f]{64}$') from seyahat.sessions), 'oturumlar yalnızca SHA-256 özeti';
   assert (select bool_and(password_hash like '$2a$12$%') from seyahat.users), 'parolalar bcrypt (maliyet 12)';
@@ -258,7 +261,8 @@ end $$;
 do $$
 begin
   perform seyahat.kullanici_ekle('yonetici', 'yepyeni-parola-9876', 'editor');
-  assert not exists (select 1 from seyahat.sessions s join seyahat.users u on u.id = s.user_id where u.username = 'yonetici');
+  assert not exists (select 1 from seyahat.sessions s join seyahat.users u on u.id = s.user_id
+                    where u.username = 'yonetici' and s.expires_at > now());
   assert (select role from seyahat.users where username = 'yonetici') = 'editor';
 end $$;
 
