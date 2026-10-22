@@ -11,14 +11,15 @@ test('GitHub Pages sitesi doğru üretilir', () => {
     const { url, assetDir } = buildSite(out, {});
     assert.match(url, /^https:\/\/[a-z0-9]+\.supabase\.co$/);
     assert.match(assetDir, /^v\/[0-9a-f]{10}$/, 'dosyalar sürüm klasöründe (önbellek kırma)');
-    for (const f of ['index.html', 'giris.html', 'kisi.html', '.nojekyll', `${assetDir}/css/app.css`, `${assetDir}/js/app.js`, `${assetDir}/js/arka-uc.js`]) {
+    for (const f of ['index.html', 'giris.html', '.nojekyll', `${assetDir}/css/app.css`, `${assetDir}/js/app.js`, `${assetDir}/js/arka-uc.js`]) {
       assert.ok(existsSync(join(out, f)), f);
     }
     assert.equal(buildSite(out, {}).assetDir, assetDir, 'aynı içerik aynı sürüm');
     const adapter = readFileSync(join(out, `${assetDir}/js/arka-uc.js`), 'utf8');
     assert.doesNotMatch(adapter, /__SUPABASE_(URL|KEY)__/);
     assert.match(adapter, /rest\/v1\/rpc/);
-    for (const f of ['index.html', 'giris.html', 'kisi.html']) {
+    for (const f of ['index.html', 'giris.html']) {
+      assert.ok(!existsSync(join(out, 'kisi.html')), 'kişi sayfası kaldırıldı');
       const html = readFileSync(join(out, f), 'utf8');
       assert.match(html, /<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self';/);
       assert.ok(html.includes(`connect-src ${url};`), 'connect-src yalnızca Supabase');
@@ -34,7 +35,7 @@ test('GitHub Pages sitesi doğru üretilir', () => {
 });
 
 test('arayüz kullanıcı verisini innerHTML ile basmaz', () => {
-  for (const f of ['app.js', 'giris.js', 'kisi.js', 'ortak.js', 'arka-uc.js', 'hafta.js', 'ozet.js', 'hata.js']) {
+  for (const f of ['app.js', 'giris.js', 'ortak.js', 'arka-uc.js', 'hafta.js', 'ozet.js', 'hata.js', 'form.js', 'sheet.js', 'liste.js', 'kisiler.js', 'sehirler.js']) {
     const src = readFileSync(new URL(`../public/js/${f}`, import.meta.url), 'utf8');
     assert.doesNotMatch(src, /innerHTML|outerHTML|insertAdjacentHTML|document\.write/, f);
   }

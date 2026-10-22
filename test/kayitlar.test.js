@@ -17,16 +17,8 @@ const add = (body, session = ed) => s.req('POST', '/api/kayitlar', { session, bo
 
 test('4 kişi ilk kurulumda tanımlı', async () => {
   assert.deepEqual(people.map((p) => p.name), INITIAL_PEOPLE);
-  for (const p of people) assert.match(p.shareKey, /^[A-Za-z0-9_-]{32}$/);
-  assert.equal(new Set(people.map((p) => p.shareKey)).size, 4);
-});
-
-test('viewer paylaşım anahtarlarını göremez', async () => {
-  const v = await s.login('izleyici');
-  const res = await s.req('GET', '/api/kisiler', { session: v });
-  assert.equal(res.status, 200);
-  assert.equal(res.json.kisiler.length, 4);
-  for (const p of res.json.kisiler) assert.equal(p.shareKey, undefined);
+  // Kişi listesi yalnızca kimlik, ad ve sayıları döndürür (iç anahtarlar sızmaz).
+  for (const p of people) assert.deepEqual(Object.keys(p).sort(), ['done', 'id', 'name', 'planned']);
 });
 
 test('ekle / durum değiştir / düzenle / sil', async () => {
@@ -193,64 +185,14 @@ test('viewer yazamaz', async () => {
   assert.equal((await add({ personId: people[0].id, region: 'Konya', date: '2026-10-20', status: 'planned' }, v)).status, 403);
   assert.equal((await s.req('PATCH', `/api/kayitlar/${id}`, { session: v, body: { status: 'done' } })).status, 403);
   assert.equal((await s.req('DELETE', `/api/kayitlar/${id}`, { session: v })).status, 403);
-  assert.equal((await s.req('POST', `/api/kisiler/${people[0].id}/link-yenile`, { session: v })).status, 403);
   await s.req('DELETE', `/api/kayitlar/${id}`, { session: ed });
 });
 
-test('editör linki yenileyemez, yönetici yenileyebilir', async () => {
-  assert.equal((await s.req('POST', `/api/kisiler/${people[3].id}/link-yenile`, { session: ed })).status, 403);
-});
-
-test('paylaşım linki yalnızca o kişiyi gösterir; yenilenince eskisi 404', async () => {
-  const [a, b] = people;
-  const ka = (await add({ personId: a.id, region: 'Trabzon', date: '2026-10-08', note: 'A notu', status: 'planned' })).json.kayit;
-  const kb = (await add({ personId: b.id, region: 'Rize', date: '2026-10-09', note: 'B notu', status: 'done' })).json.kayit;
-
-  const res = await s.req('GET', `/api/paylasim/${a.shareKey}?ay=2026-10`);
-  assert.equal(res.status, 200);
-  assert.equal(res.json.name, a.name);
-  assert.deepEqual(Object.keys(res.json).sort(), ['kayitlar', 'name']);
-  assert.ok(res.json.kayitlar.length >= 1);
-  for (const k of res.json.kayitlar) assert.deepEqual(Object.keys(k).sort(), ['date', 'endDate', 'note', 'region', 'status']);
-  assert.ok(res.json.kayitlar.some((k) => k.region === 'Trabzon'));
-  assert.ok(!res.json.kayitlar.some((k) => k.region === 'Rize'));
-  assert.ok(!res.text.includes(`"id"`) && !res.text.includes('personId') && !res.text.includes('shareKey'));
-
-  assert.equal((await s.req('GET', '/api/paylasim/kisa')).status, 404);
-  assert.equal((await s.req('GET', `/api/paylasim/${'!'.repeat(32)}`)).status, 404);
-  assert.equal((await s.req('GET', `/api/paylasim/${'A'.repeat(32)}`)).status, 404);
-
+test('kişi linki özelliği kaldırıldı: paylaşım ve link yenileme uçları yok', async () => {
   const admin = await s.login('yonetici');
-  const renewed = await s.req('POST', `/api/kisiler/${a.id}/link-yenile`, { session: admin });
-  assert.equal(renewed.status, 200);
-  assert.match(renewed.json.shareKey, /^[A-Za-z0-9_-]{32}$/);
-  assert.notEqual(renewed.json.shareKey, a.shareKey);
-
-  const old = await s.req('GET', `/api/paylasim/${a.shareKey}`);
-  assert.equal(old.status, 404);
-  assert.equal(old.json.error, 'Bu link geçersiz ya da yenilenmiş.');
-  const fresh = await s.req('GET', `/api/paylasim/${renewed.json.shareKey}`);
-  assert.equal(fresh.status, 200);
-  assert.equal(fresh.json.name, a.name);
-
-  assert.equal(s.db.prepare("SELECT COUNT(*) AS n FROM audit WHERE action = 'link_yenile'").get().n, 1);
-  assert.equal((await s.req('POST', '/api/kisiler/9999/link-yenile', { session: admin })).status, 404);
-  await s.req('DELETE', `/api/kayitlar/${ka.id}`, { session: ed });
-  await s.req('DELETE', `/api/kayitlar/${kb.id}`, { session: ed });
-});
-
-test('paylaşım ucunda dakikada 30 istek sınırı', async () => {
-  const p = await startServer({ limits: { sharePerMinute: 30 } });
-  try {
-    const statuses = [];
-    for (let i = 0; i < 31; i++) statuses.push((await p.req('GET', `/api/paylasim/${'B'.repeat(32)}`)).status);
-    assert.ok(statuses.slice(0, 30).every((x) => x === 404));
-    const last = await p.req('GET', `/api/paylasim/${'B'.repeat(32)}`);
-    assert.equal(last.status, 429);
-    assert.ok(Number(last.headers.get('retry-after')) > 0);
-  } finally {
-    await p.close();
-  }
+  assert.equal((await s.req('GET', `/api/paylasim/${'A'.repeat(32)}`)).status, 404);
+  assert.equal((await s.req('POST', `/api/kisiler/${people[0].id}/link-yenile`, { session: admin })).status, 404);
+  assert.equal((await s.req('GET', `/kisi/${'A'.repeat(32)}`)).status, 404);
 });
 
 test('denetim kaydı giriş ve çıkışları kullanıcı ve IP ile tutar', async () => {

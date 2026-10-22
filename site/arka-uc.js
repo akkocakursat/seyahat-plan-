@@ -10,13 +10,7 @@ const TOKEN_KEY = 'seyahat_oturum';
 export const yollar = {
   giris: 'giris.html',
   anasayfa: './',
-  // Anahtar adresin # kısmında durur: sunucuya, kayıtlara ve Referer başlığına gitmez.
-  kisiLinki: (anahtar) => new URL(`kisi.html#${anahtar}`, location.href).href,
 };
-
-export function paylasimAnahtari() {
-  return location.hash.slice(1);
-}
 
 export function setCsrf() {
   // Oturum anahtarı çerezle değil, istek gövdesiyle gönderildiği için CSRF anahtarına gerek yoktur.
@@ -95,10 +89,6 @@ export async function api(method, path, body) {
       return null;
     case 'GET kisiler':
       return rpc('kisiler_listele', { p_token: token, p_ay: ay });
-    case 'POST kisiler/:id/link-yenile':
-      return rpc('link_yenile', { p_token: token, p_kisi_id: Number(parts[1]) });
-    case 'GET paylasim/:id':
-      return rpc('paylasim', { p_anahtar: decodeURIComponent(parts[1]), p_ay: ay });
     default:
       throw new ApiError(404, 'Bulunamadı.');
   }

@@ -1,17 +1,16 @@
 import express from 'express';
 import { resolve } from 'node:path';
 import { ROOT } from './config.js';
-import { audit, newShareKey } from './db.js';
+import { audit } from './db.js';
 import {
   createSession, findSession, touchSession, deleteSession, verifyPassword, dummyHash, safeEqualStrings,
 } from './auth.js';
 import { Counter, rateLimit } from './ratelimit.js';
 import {
-  ValidationError, parseMonth, parseId, isValidDate, checkTripRange, shiftDate, tripDays, validateTripCreate, validateTripPatch, validateLogin,
+  ValidationError, parseMonth, parseId, isValidDate, usernameKey, checkTripRange, shiftDate, tripDays, validateTripCreate, validateTripPatch, validateLogin,
 } from './validate.js';
 
 const LOGIN_ERROR = 'Kullanıcı adı veya parola hatalı.';
-const SHARE_KEY_RE = /^[A-Za-z0-9_-]{32}$/;
 const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const PUBLIC_DIR = resolve(ROOT, 'public');
 const VIEWS_DIR = resolve(ROOT, 'views');
@@ -43,7 +42,6 @@ function parseCookies(header) {
 export function createApp({ config, db, logger = console, limits = {} }) {
   const L = {
     generalPerMinute: 300,
-    sharePerMinute: 30,
     loginUserFailures: 8,
     loginIpFailures: 30,
     loginWindowMs: 15 * 60_000,
@@ -141,10 +139,8 @@ export function createApp({ config, db, logger = console, limits = {} }) {
     res.set('Cache-Control', 'no-store');
     res.sendFile(resolve(VIEWS_DIR, name));
   };
-  const shareLimiter = rateLimit({ limit: L.sharePerMinute, windowMs: 60_000 });
   app.get('/', sendView('index.html'));
   app.get('/giris', sendView('giris.html'));
-  app.get('/kisi/:anahtar', rateLimit({ limit: L.sharePerMinute, windowMs: 60_000 }), sendView('kisi.html'));
 
   // ---- API ----
   const api = express.Router();
@@ -166,7 +162,7 @@ export function createApp({ config, db, logger = console, limits = {} }) {
   api.post('/giris', ah(async (req, res) => {
     const creds = validateLogin(req.body ?? {});
     const clientIp = ip(req);
-    const userKey = creds ? creds.username.toLowerCase() : '';
+    const userKey = creds ? usernameKey(creds.username) : '';
 
     const retry = Math.max(ipFailures.blockedFor(clientIp), userKey ? userFailures.blockedFor(userKey) : 0);
     if (retry) {
@@ -179,7 +175,7 @@ export function createApp({ config, db, logger = console, limits = {} }) {
     ipFailures.hit(clientIp);
     if (userKey) userFailures.hit(userKey);
 
-    const user = creds ? db.prepare('SELECT id, username, role, password_hash FROM users WHERE username = ?').get(creds.username) : null;
+    const user = creds ? db.prepare('SELECT id, username, role, password_hash FROM users WHERE username = ?').get(userKey) : null;
     // Kullanıcı yoksa da aynı maliyette bir doğrulama yapılır.
     const ok = await verifyPassword(creds?.password ?? '', user ? user.password_hash : await dummyHash());
 
@@ -292,40 +288,12 @@ export function createApp({ config, db, logger = console, limits = {} }) {
     const where = range ? 'AND t.date <= ? AND t.end_date >= ?' : '';
     const params = range ? [range.to, range.from] : [];
     const rows = db.prepare(`
-      SELECT p.id, p.name, p.share_key AS shareKey,
+      SELECT p.id, p.name,
         COUNT(CASE WHEN t.status = 'planned' THEN 1 END) AS planned,
         COUNT(CASE WHEN t.status = 'done' THEN 1 END) AS done
       FROM people p LEFT JOIN trips t ON t.person_id = p.id ${where}
       GROUP BY p.id ORDER BY p.id`).all(...params);
-    const canSeeKeys = req.session.role === 'admin' || req.session.role === 'editor';
-    res.json({
-      kisiler: rows.map((r) => {
-        const out = { id: r.id, name: r.name, planned: r.planned, done: r.done };
-        if (canSeeKeys) out.shareKey = r.shareKey;
-        return out;
-      }),
-    });
-  });
-
-  api.post('/kisiler/:id/link-yenile', requireRole('admin'), requireCsrf, (req, res) => {
-    const id = parseId(req.params.id);
-    const person = id && db.prepare('SELECT id, name FROM people WHERE id = ?').get(id);
-    if (!person) throw new HttpError(404, 'Kişi bulunamadı.');
-    const shareKey = newShareKey();
-    db.prepare('UPDATE people SET share_key = ? WHERE id = ?').run(shareKey, id);
-    audit(db, { ...actor(req), action: 'link_yenile', detail: { kisiId: id, ad: person.name } });
-    res.json({ shareKey });
-  });
-
-  api.get('/paylasim/:anahtar', shareLimiter, (req, res) => {
-    const key = req.params.anahtar;
-    const person = SHARE_KEY_RE.test(key) ? db.prepare('SELECT id, name FROM people WHERE share_key = ?').get(key) : null;
-    if (!person) throw new HttpError(404, 'Bu link geçersiz ya da yenilenmiş.');
-    const range = monthRange(req);
-    const sql = `SELECT region, date, end_date AS endDate, note, status FROM trips
-      WHERE person_id = ? ${range ? 'AND date <= ? AND end_date >= ?' : ''} ORDER BY date, id`;
-    const trips = db.prepare(sql).all(person.id, ...(range ? [range.to, range.from] : []));
-    res.json({ name: person.name, kayitlar: trips });
+    res.json({ kisiler: rows.map((r) => ({ id: r.id, name: r.name, planned: r.planned, done: r.done })) });
   });
 
   api.use((req, res, next) => next(new HttpError(404, 'Bulunamadı.')));

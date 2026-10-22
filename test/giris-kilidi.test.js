@@ -140,3 +140,16 @@ test('PUBLIC_URL verildiğinde Origin ona göre denetlenir', async () => {
     await s.close();
   }
 });
+
+test('girişte kullanıcı adı Türkçe harf ve büyük/küçük harf duyarsız', async () => {
+  const s = await startServer();
+  try {
+    await upsertUser(s.db, 'kursat', 'kursat-parola-1234', 'admin');
+    for (const name of ['kursat', 'Kürşat', 'KÜRŞAT', ' kürşat ']) {
+      assert.equal((await s.req('POST', '/api/giris', { body: { username: name, password: 'kursat-parola-1234' } })).status, 200, name);
+    }
+    assert.equal((await s.req('POST', '/api/giris', { body: { username: 'SELİM', password: 'x' } })).status, 401);
+  } finally {
+    await s.close();
+  }
+});

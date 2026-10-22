@@ -2,37 +2,35 @@
 <html lang="tr">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#ffffff">
   <title>Seyahat Defteri</title>
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/static/css/app.css">
   <script type="module" src="/static/js/app.js"></script>
 </head>
 <body>
-  <header class="band">
-    <div class="band-inner">
+  <header class="topbar">
+    <div class="topbar-in">
       <div class="brand">
         <img class="logo" src="/static/favicon.svg" alt="" width="28" height="28">
-        <h1>Seyahat Defteri</h1>
+        <span class="brand-name">Seyahat Defteri</span>
       </div>
-      <div class="who" id="who" hidden>
-        <span class="who-name" id="who-name"></span>
-        <span class="who-role" id="who-role"></span>
-        <button type="button" class="btn btn-ghost" id="logout">Çıkış</button>
+      <nav class="tabs" id="tabs" aria-label="Bölümler"></nav>
+      <div class="me" id="me" hidden>
+        <span class="me-who"><span class="me-name" id="me-name"></span> <span class="me-role" id="me-role"></span></span>
+        <button type="button" class="btn btn-quiet btn-small" id="logout">Çıkış</button>
       </div>
     </div>
   </header>
 
-  <div class="layout" id="layout" hidden>
-    <nav class="sidebar" id="sidebar" aria-label="Durum ve kişiler"></nav>
-    <main class="content" id="content">
-      <div class="monthbar" id="monthbar"></div>
-      <p class="flash" id="flash" role="status" aria-live="polite" hidden></p>
-      <div id="view"></div>
-    </main>
-  </div>
+  <main class="main" id="main" hidden>
+    <div id="view"></div>
+  </main>
 
+  <button type="button" class="fab" id="fab" hidden><span>Seyahat ekle</span></button>
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
   <p class="loading" id="loading">Yükleniyor…</p>
 </body>
 </html>

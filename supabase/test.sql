@@ -47,8 +47,6 @@ declare
   pid2 bigint;
   tid bigint;
   ids bigint[] := '{}';
-  key_old text;
-  key_new text;
   bad jsonb;
   i int;
 begin
@@ -81,12 +79,10 @@ begin
   assert json_array_length(k1) = 4, '4 kişi';
   assert k1 -> 0 ->> 'name' = 'Selim Kutlubay';
   assert k1 -> 3 ->> 'name' = 'Kürşat Akkoca';
-  assert k1 -> 0 ->> 'shareKey' ~ '^[A-Za-z0-9_-]{32}$', 'anahtar biçimi';
+  assert (select array_agg(k order by k) from json_object_keys(k1 -> 0) k) = array['done', 'id', 'name', 'planned'], 'kişi alanları';
   k2 := public.kisiler_listele(vw) -> 'kisiler';
-  assert k2 -> 0 ->> 'shareKey' is null, 'izleyici anahtarı görmemeli';
   pid := (k1 -> 0 ->> 'id')::bigint;
   pid2 := (k1 -> 1 ->> 'id')::bigint;
-  key_old := k1 -> 0 ->> 'shareKey';
 
   -- Ekle / durum değiştir / düzenle / sil
   r := public.kayit_ekle(ed, jsonb_build_object('personId', pid, 'region', '  İzmir  ', 'date', '2026-10-15', 'note', 'Fuar', 'status', 'planned'));
@@ -182,33 +178,10 @@ begin
   assert char_length(r -> 'kayit' ->> 'note') = 500, 'not uzunluğu';
   ids := ids || (r -> 'kayit' ->> 'id')::bigint;
 
-  -- İzleyici yazamaz; editör link yenileyemez
+  -- İzleyici yazamaz
   assert (public.kayit_ekle(vw, jsonb_build_object('personId', pid, 'region', 'Konya', 'date', '2026-10-20')) ->> 'status')::int = 403;
   assert (public.kayit_guncelle(vw, ids[2], '{"status": "done"}') ->> 'status')::int = 403;
   assert (public.kayit_sil(vw, ids[2]) ->> 'status')::int = 403;
-  assert (public.link_yenile(vw, pid) ->> 'status')::int = 403;
-  assert (public.link_yenile(ed, pid) ->> 'status')::int = 403;
-
-  -- Paylaşım linki yalnızca o kişiyi gösterir; iç kimlik sızmaz
-  r := public.kayit_ekle(ed, jsonb_build_object('personId', pid, 'region', 'Trabzon', 'date', '2026-10-08', 'note', 'A notu'));
-  ids := ids || (r -> 'kayit' ->> 'id')::bigint;
-  r := public.paylasim(key_old, '2026-10');
-  assert r ->> 'name' = 'Selim Kutlubay';
-  assert (select array_agg(k order by k) from json_object_keys(r) k) = array['kayitlar', 'name'];
-  assert (select bool_and((select array_agg(k order by k) from json_object_keys(e) k) = array['date', 'endDate', 'note', 'region', 'status'])
-          from json_array_elements(r -> 'kayitlar') e), 'yalnızca region/date/note/status';
-  assert not exists (select 1 from json_array_elements(r -> 'kayitlar') e where e ->> 'region' = 'Sınır'), 'başka kişinin kaydı sızmamalı';
-  assert exists (select 1 from json_array_elements(r -> 'kayitlar') e where e ->> 'region' = 'Trabzon');
-  assert (public.paylasim('kisa') ->> 'status')::int = 404;
-  assert (public.paylasim(repeat('A', 32)) ->> 'status')::int = 404;
-
-  -- Link yenileme: eski link anında geçersiz
-  key_new := public.link_yenile(adm, pid) ->> 'shareKey';
-  assert key_new ~ '^[A-Za-z0-9_-]{32}$' and key_new <> key_old;
-  r := public.paylasim(key_old);
-  assert (r ->> 'status')::int = 404 and r ->> 'error' = 'Bu link geçersiz ya da yenilenmiş.', 'eski link 404';
-  assert public.paylasim(key_new) ->> 'name' = 'Selim Kutlubay';
-  assert (public.link_yenile(adm, 999999) ->> 'status')::int = 404;
 
   -- Çıkış sonrası oturum geçersiz
   assert public.cikis(ed) ->> 'ok' = 'true';
@@ -268,16 +241,13 @@ begin
   assert (r ->> 'status')::int = 429, 'ip kilidi';
 end $$;
 
--- Paylaşım ucunda dakikada 30 sınırı (yeni IP ile)
-select set_config('request.headers', '{"cf-connecting-ip": "192.0.2.44"}', false);
+-- Kişi linki kaldırıldı: eski kurulumda kalan fonksiyonlar anon tarafından çağrılamaz
 do $$
-declare
-  i int;
 begin
-  for i in 1..30 loop
-    assert (public.paylasim(repeat('B', 32)) ->> 'status')::int = 404;
-  end loop;
-  assert (public.paylasim(repeat('B', 32)) ->> 'status')::int = 429, 'paylaşım sınırı';
+  assert to_regprocedure('public.paylasim(text, text)') is null
+      or not has_function_privilege('anon', 'public.paylasim(text, text)', 'execute'), 'paylaşım kapalı olmalı';
+  assert to_regprocedure('public.link_yenile(text, bigint)') is null
+      or not has_function_privilege('anon', 'public.link_yenile(text, bigint)', 'execute'), 'link yenileme kapalı olmalı';
 end $$;
 
 reset role;
@@ -292,7 +262,6 @@ begin
   assert exists (select 1 from seyahat.audit where action = 'kayit_guncelle');
   assert exists (select 1 from seyahat.audit where action = 'kayit_sil');
   assert exists (select 1 from seyahat.trips where deleted_at is not null), 'silinen kayıt işaretli kalmalı';
-  assert exists (select 1 from seyahat.audit where action = 'link_yenile');
   assert (select bool_and(token_hash ~ '^[0-9a-f]{64}$') from seyahat.sessions), 'oturumlar yalnızca SHA-256 özeti';
   assert (select bool_and(password_hash like '$2a$12$%') from seyahat.users), 'parolalar bcrypt (maliyet 12)';
 end $$;

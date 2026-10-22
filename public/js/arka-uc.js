@@ -4,12 +4,7 @@ import { ApiError } from './hata.js';
 export const yollar = {
   giris: '/giris',
   anasayfa: '/',
-  kisiLinki: (anahtar) => `${location.origin}/kisi/${anahtar}`,
 };
-
-export function paylasimAnahtari() {
-  return location.pathname.split('/').filter(Boolean)[1] || '';
-}
 
 let csrfToken = null;
 export function setCsrf(token) {

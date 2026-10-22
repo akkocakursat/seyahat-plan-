@@ -167,7 +167,7 @@ test('dizin gezintisi ve dotfile engellenir, dizin listesi yok', async () => {
 });
 
 test('statik sayfalar satır içi script/style içermez', async () => {
-  for (const path of ['/', '/giris', '/kisi/' + 'a'.repeat(32)]) {
+  for (const path of ['/', '/giris']) {
     const res = await s.req('GET', path);
     assert.equal(res.status, 200);
     assert.doesNotMatch(res.text, /<script(?![^>]*\bsrc=)[^>]*>/i);

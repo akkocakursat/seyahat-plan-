@@ -1,8 +1,8 @@
 # Seyahat Defteri
 
 Departmanın iş seyahatlerini takip eden, güvenli ve sade bir web uygulaması.
-Planlanan ve gerçekleşen seyahatler kişi ve ay bazında izlenir; her kişi için giriş gerektirmeyen,
-salt-okunur bir paylaşım linki vardır.
+Herkes kendi seyahatlerini telefondan kolayca ekler; planlanan ve gerçekleşen seyahatler, yıllık hafta
+tablosu ve kişi bazında gün özeti tek yerde görünür.
 
 - **Node.js 22.13+** (ES modülleri), tek dış bağımlılık: **Express 4**
 - Veritabanı: Node'un yerleşik `node:sqlite` modülü (WAL, foreign_keys açık) — derleme gerektirmez
@@ -27,7 +27,7 @@ Selim Kutlubay, Yusuf Özoğlu, Selahattin Çomuoğlu, Kürşat Akkoca.
 |---|---|
 | `npm start` | Sunucuyu başlatır |
 | `npm run kullanici-ekle -- --rol admin\|editor\|viewer [kullanıcı_adı]` | Giriş hesabı oluşturur. Parola ekrana yazılmadan sorulur (en az 12 karakter). Aynı kullanıcı adıyla tekrar çalıştırılırsa parola ve rol güncellenir, açık oturumları kapatılır. |
-| `npm run kisi-ekle -- "Ad Soyad"` | Seyahat eden yeni kişi ekler (giriş hesabı değildir); rastgele paylaşım anahtarı üretilir. |
+| `npm run kisi-ekle -- "Ad Soyad"` | Seyahat eden yeni kişi ekler. Kişinin giriş hesabı, adının ilk kelimesiyle aynı kullanıcı adıyla açılır (ör. `kullanici-ekle -- --rol editor ayse`). |
 | `npm run yedek` | `VACUUM INTO` ile `yedekler/` klasörüne tutarlı kopya alır, son 30 yedeği tutar. |
 | `npm test` | `node:test` ile gerçek sunucuya karşı uçtan uca testler |
 
@@ -35,35 +35,34 @@ Selim Kutlubay, Yusuf Özoğlu, Selahattin Çomuoğlu, Kürşat Akkoca.
 
 | Rol | Yetkiler |
 |---|---|
-| **viewer** (Görüntüleyici) | Yalnızca görür; kişi linklerini göremez |
-| **editor** (Düzenleyici) | Kayıt ekler, düzenler, siler; kişi linkini kopyalar |
-| **admin** (Yönetici) | Editörün yaptıkları + kişi linkini yeniler |
+| **viewer** (Görüntüleyici) | Yalnızca görür |
+| **editor** (Düzenleyici) | Kendi seyahatlerini ekler, düzenler, siler |
+| **admin** (Yönetici) | Editörün yaptıkları + herkesin seyahatini düzenleyebilir |
 
 ## Kullanım
 
-- **Ana sayfa** (`/`, giriş gerekir): solda *Planlanan* / *Gerçekleşen* düğmeleri ve seçili aydaki kayıt sayıları;
-  seçili olanın altında kişiler ve o aydaki sayıları. Sağda ay seçici (`‹ Ekim 2026 ›`); sayfa her zaman içinde
-  bulunulan ayla açılır, başka aydayken **Bu aya dön** düğmesi çıkar.
-- Kişi seçili değilken 4 kişinin özet kartları görünür. Bir kişiye tıklayınca kayıt formu ve o aya ait kayıt tablosu açılır.
-  Planlanan tabloda yaklaşan tarih, Gerçekleşen tabloda en yeni tarih üsttedir.
-- Satır işlemleri: **Gerçekleşti** / **Plana al**, **Düzenle** (form doldurulur, düğme *Güncelle* olur),
-  **Sil** (satır içinde onay). Tarihi geçmiş ama hâlâ planlanan kayıtlarda **Tarihi geçti** uyarısı görünür.
-- **Kişi linkini kopyala** (editör, yönetici) ve **Linki yenile** (yalnızca yönetici, sayfa içinde onay).
-- **Başlangıç ve bitiş tarihi:** Her seyahatin başlangıç ve bitiş tarihi vardır; gün sayısı (ikisi dahil) otomatik
-  hesaplanır ve tablolarda "3 gün" olarak görünür. Bir seyahat en fazla 365 gün olabilir. Düzenlemede yalnızca
-  başlangıç değiştirilirse süre korunur (bitiş de aynı miktar kayar). Aya taşan seyahat her iki ayda da listelenir.
-- **Özet** sekmesi: seçilen yıl ya da ay için kişi başına seyahat sayısı, toplam gün, gerçekleşen gün, bekleyen
-  (planlanan) gün ve gerçekleşme oranı (gerçekleşen gün / toplam gün); en altta toplam satırı. Tüm yıl seçiliyken
-  ayrıca kişi × ay seyahat günleri tablosu. Döneme taşan seyahatlerin yalnızca dönem içindeki günleri sayılır.
-- **Yıllık hafta planı** (kişi seçili değilken varsayılan görünüm): satırlarda ISO haftaları (1–52/53, ay ayraçlarıyla),
-  sütunlarda kişiler. Her hücrede o haftanın seyahatleri renkli etiketlerle görünür (planlanan amber, gerçekleşen yeşil,
-  tarihi geçmiş kırmızı); bu hafta vurgulanır. Hücredeki **+** ile o haftaya plan eklenir, etikete tıklayınca kayıt
-  penceresi açılır (Gerçekleşti / Plana al, Düzenle, Sil, Aylık görünümde aç). **Haftalara toplu planla** ile bir kişi
-  için seçilen her haftaya ayrı kayıt eklenir; haftalar numaralara tıklanarak ya da `1-5, 35, 37` veya
-  `1-2-3-4-5-35-37` yazılarak seçilir (iki parçalı `35-37` aralık, daha uzun zincir liste sayılır).
-  "Aylık" sekmesi aylık kişi kartlarıdır; seçilen sekme tarayıcıda hatırlanır.
-- **Kişi sayfası** (`/kisi/<anahtar>`): giriş gerektirmez, salt-okunurdur; yalnızca Bölge, Tarih ve Not gösterilir.
-  Link yenilenince eski link anında "Bu link geçersiz ya da yenilenmiş" mesajı verir.
+Arayüz telefon öncelikli tasarlandı: telefonda dört bölüm alttaki sekmelerde, bilgisayarda üstte durur; her
+ekranda sağ altta sarı **Seyahat ekle** düğmesi vardır. Herkes kendi hesabıyla girer; kullanıcı adı kişinin
+adıdır (`selim` → Selim Kutlubay, `kürşat` ya da `kursat` → Kürşat Akkoca).
+
+- **Seyahatler:** açılışta kişinin kendi seyahatleri (**Ben**); üstteki düğmelerle **Herkes** ya da başka bir kişi
+  seçilebilir. **Planlanan** sekmesinde en üstte *Tarihi geçti* listesi ve tek dokunuşla **Gerçekleşti** düğmesi
+  (yanlışlıkla basılırsa bildirimdeki **Geri al**), altında haftalara göre gruplanmış yaklaşan seyahatler
+  (*Bu hafta*, *Gelecek hafta*, *45. hafta*…). **Gerçekleşen** sekmesi aylara göre gruplanır. Bir seyahate
+  dokununca ayrıntı paneli açılır: Gerçekleşti / Planlandıya geri al, Düzenle, Sil (panel içinde onay).
+- **Seyahat ekle:** kişi sorulmaz, giriş yapan kişi adına eklenir. Türkiye'nin 81 ilinden aranarak **birden fazla
+  şehir** seçilir (son gidilen şehirler hızlı seçim olarak çıkar), gidiş–dönüş tarihleri ve **1 / 2 / 3 / 5 gün**
+  hızlı süreleri, durum ve isteğe bağlı not. **Başka haftalara da ekle** ile aynı seyahat seçilen haftalara
+  (numaralara dokunarak ya da `1-5, 35, 37` / `1-2-3-4-5-35-37` yazarak) ayrı kayıtlar olarak eklenir.
+- **Yıl:** hafta × kişi tablosu; bu hafta sarı çizgiyle işaretli, açılışta bu haftaya kayar. Kişi yalnızca kendi
+  sütunundaki **+** ile o haftaya ekler; birden çok haftaya yayılan seyahat sonraki haftalarda ince çizgi olarak görünür.
+- **Özet:** yıl ya da ay için toplam gün cümlesi, kişi başına gün sayısı ve kişileri karşılaştıran çubuk
+  (yeşil gerçekleşen, mavi planlı), tarihi geçmiş uyarısı; tüm yıl seçiliyken kişi × ay gün tablosu.
+- **Kişiler:** kişinin bu yılki seyahat günleri, sıradaki seyahati ve seyahatlerine geçiş.
+- Durum renkle birlikte dolguyla da anlatılır: planlanan çerçeveli (mavi), gerçekleşen dolu (yeşil), tarihi geçen
+  kırmızı. Telefonun geri tuşu açık paneli kapatır.
+- Bir seyahat en fazla 365 gün olabilir; yalnızca gidiş değiştirilirse süre korunur. Aya taşan seyahat her iki ayda
+  listelenir.
 
 ### API
 
@@ -76,9 +75,7 @@ Selim Kutlubay, Yusuf Özoğlu, Selahattin Çomuoğlu, Kürşat Akkoca.
 | POST | `/api/kayitlar` | Yeni kayıt; `{personId, region, date, endDate, note, status}` (`endDate` verilmezse `date`) |
 | PATCH | `/api/kayitlar/:id` | Kısmi güncelleme (yalnızca `date` değişirse süre korunur) |
 | DELETE | `/api/kayitlar/:id` | Silme |
-| GET | `/api/kisiler[?ay=2026-10]` | Kişiler ve sayıları; editör ve üstüne paylaşım anahtarı da döner |
-| POST | `/api/kisiler/:id/link-yenile` | Yalnızca yönetici; eski link anında geçersiz olur |
-| GET | `/api/paylasim/:anahtar[?ay=2026-10]` | Giriş gerektirmez; yalnızca kişi adı ve `region/date/endDate/note/status` |
+| GET | `/api/kisiler[?ay=2026-10]` | Kişiler ve sayıları (`id, name, planned, done`) |
 | GET | `/saglik` | Sağlık kontrolü |
 
 Değişiklik istekleri (POST/PATCH/DELETE) `Content-Type: application/json`, sunucunun kendi adresiyle eşleşen
@@ -111,7 +108,7 @@ Değişiklik istekleri (POST/PATCH/DELETE) `Content-Type: application/json`, sun
 - **Kaba kuvvet:** yalnızca hatalı denemeler sayılır. Aynı kullanıcı adına 15 dakikada 8, aynı IP'den 30 hatalı
   denemeden sonra `429` + `Retry-After`. Başarılı giriş kullanıcı sayacını sıfırlar. Deneme, parola doğrulanmadan
   önce sayılır; aynı anda gönderilen paralel istekler de sınırı aşamaz.
-- **İstek sınırı:** genel dakikada 300; paylaşım linki ucu dakikada 30.
+- **İstek sınırı:** genel dakikada 300.
 - **SQL:** tüm sorgular hazırlanmış ve parametreli.
 - **Girdi doğrulama (sunucuda):** bilinmeyen alanlar reddedilir; gerçek takvim tarihi (30 Şubat reddedilir), yıl
   2000–2100; metinlerden kontrol ve görünmez yön karakterleri temizlenir; bölge ≤ 80, not ≤ 500 karakter;
@@ -122,7 +119,7 @@ Değişiklik istekleri (POST/PATCH/DELETE) `Content-Type: application/json`, sun
   (kamera, mikrofon, konum kapalı), COOP/CORP `same-origin`, HTTPS'te HSTS; `X-Powered-By` kapalı.
 - **Statik dosyalar:** yalnızca `/static` altından; dotfile'lar reddedilir, dizin listesi yok.
 - **Hatalar:** ayrıntılar istemciye gösterilmez, yalnızca sunucu kaydına yazılır; async hatalar sarmalayıcıyla yakalanır.
-- **Denetim kaydı:** `audit` tablosunda giriş, başarısız giriş, çıkış, kayıt ekleme/güncelleme/silme ve link yenileme;
+- **Denetim kaydı:** `audit` tablosunda giriş, başarısız giriş, çıkış, kayıt ekleme/güncelleme/silme;
   kullanıcı ve IP ile.
 
 Denetim kaydını incelemek için:
@@ -219,15 +216,13 @@ saklanır ve en yeni 30 yedek tutulur. Günlük yedek için cron örneği:
 
 Geri yüklemek için servisi durdurun, yedek dosyasını `data/seyahat.db` olarak kopyalayın (yanındaki `-wal` ve
 `-shm` dosyalarını silin) ve servisi başlatın. Yedekleri sunucu dışında, erişimi kısıtlı bir yere de kopyalayın:
-paylaşım anahtarları ve parola özetleri yedeğin içindedir.
+parola özetleri yedeğin içindedir.
 
 ## Canlı sürüm: GitHub Pages + Supabase
 
 Aynı arayüz, sunucu gerektirmeden GitHub Pages'te de yayınlanır; veriler Supabase (PostgreSQL) üzerinde tutulur.
 
 - **Adres:** https://akkocakursat.github.io/seyahat-plan-/
-- **Kişi linkleri:** `https://akkocakursat.github.io/seyahat-plan-/kisi.html#<anahtar>` (anahtar `#` kısmında durduğu
-  için sunucu kayıtlarına ve Referer başlığına gitmez).
 
 ### Supabase kurulumu (bir kez)
 
@@ -253,16 +248,16 @@ Aynı arayüz, sunucu gerektirmeden GitHub Pages'te de yayınlanır; veriler Sup
 - Tablolar API'ye açık olmayan `seyahat` şemasındadır; `anon` rolü bu şemaya hiç erişemez, ayrıca RLS açık ve
   politika yoktur. Tarayıcı yalnızca `public` şemadaki `SECURITY DEFINER` fonksiyonları çağırabilir
   (`giris`, `oturum`, `cikis`, `kayitlar_listele`, `kayit_ekle`, `kayit_guncelle`, `kayit_sil`, `kisiler_listele`,
-  `link_yenile`, `paylasim`). Her fonksiyon oturumu, rolü ve girdileri kendisi denetler; `search_path` boştur.
+  `kayitlar_aralik`). Her fonksiyon oturumu, rolü ve girdileri kendisi denetler; `search_path` boştur.
 - Parolalar `pgcrypto` ile **bcrypt (maliyet 12)** özetlenir (PostgreSQL'de scrypt bulunmadığından). Kullanıcı
   yoksa da sahte özetle aynı maliyette doğrulama yapılır; hata mesajı her durumda aynıdır.
 - Oturum anahtarı 32 rastgele bayttır; veritabanında yalnızca SHA-256 özeti tutulur, süre 8 saat ve kayar.
   Anahtar çerezle değil istek gövdesiyle gönderildiği için CSRF saldırısı mümkün değildir.
 - Kaba kuvvet ve istek sınırları sunucu sürümüyle aynıdır (kullanıcı adına 15 dk'da 8, IP'den 30 hatalı deneme;
-  genel dakikada 300, paylaşım linki dakikada 30); IP, Supabase'in `cf-connecting-ip` başlığından alınır.
-- Girdi doğrulama, denetim kaydı ve paylaşım linkinin yalnızca `region/date/endDate/note/status` döndürmesi sunucu
-  sürümüyle aynıdır.
-- Silinen kayıtlar `deleted_at` ile işaretlenir; listelerde, sayılarda ve paylaşım linkinde görünmez, ama
+  genel dakikada 300); IP, Supabase'in `cf-connecting-ip` başlığından alınır.
+- Girdi doğrulama ve denetim kaydı sunucu sürümüyle aynıdır. Kişi linki özelliği kaldırıldı; daha önce kurulmuş
+  `paylasim` ve `link_yenile` fonksiyonlarının çağrı izni `kurulum.sql` tarafından geri alınır.
+- Silinen kayıtlar `deleted_at` ile işaretlenir; listelerde ve sayılarda görünmez, ama
   veritabanında kalır (yanlışlıkla silmede geri alınabilir). Çıkışta ve parola değişiminde oturumların süresi
   hemen sona erdirilir. Kalıcı temizlik gerekirse SQL düzenleyicisinden yapılabilir:
   `delete from seyahat.trips where deleted_at < now() - interval '90 days';`
@@ -298,5 +293,5 @@ GitHub Actions (`.github/workflows/test.yml`) her push ve pull request'te testle
 Testler geçici bir veritabanıyla gerçek bir sunucu başlatır ve `fetch` ile şunları doğrular: güvenlik başlıkları,
 oturumsuz erişimde 401, aynı hata mesajı, çerez bayrakları, 4 kişinin tanımlı olması, CSRF anahtarsız ve yabancı
 Origin'li isteklerde 403, ekle/durum değiştir/düzenle/sil, aya göre listelemede sınır günleri, geçersiz girdiler,
-viewer'ın yazamaması, paylaşım linkinin yalnızca o kişiyi göstermesi ve yenilenince eskisinin 404 dönmesi,
+viewer'ın yazamaması, kaldırılan kişi linki uçlarının artık bulunmaması,
 çıkış sonrası oturumun geçersizliği, 413/415, hatalı giriş kilidi ve dizin gezintisinin engellenmesi.

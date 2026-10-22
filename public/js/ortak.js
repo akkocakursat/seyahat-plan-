@@ -113,7 +113,7 @@ export function rangeText(t) {
 }
 
 // Veri katmanı: Express sürümünde ./arka-uc.js sunucu API'sine, GitHub Pages sürümünde Supabase'e bağlanır.
-export { api, setCsrf, yollar, paylasimAnahtari } from './arka-uc.js';
+export { api, setCsrf, yollar } from './arka-uc.js';
 export { ApiError } from './hata.js';
 
 const ISO_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -154,3 +154,30 @@ export function dateRangeInputs(start, end) {
     },
   };
 }
+
+// ---------- Kısa tarih gösterimleri ----------
+export const AY_KISA = ['Oca', 'Şub', 'Mar', 'Nis', 'May', 'Haz', 'Tem', 'Ağu', 'Eyl', 'Eki', 'Kas', 'Ara'];
+export const GUN_KISA = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'];
+
+const parts = (iso) => iso.split('-').map(Number);
+export const weekdayIndex = (iso) => (new Date(`${iso}T00:00:00Z`).getUTCDay() + 6) % 7; // 0 = pazartesi
+
+// "21 Eki" (farklı yılsa "21 Eki 2027")
+export function shortDate(iso, withYear = false) {
+  const [y, m, d] = parts(iso);
+  return `${d} ${AY_KISA[m - 1]}${withYear ? ` ${y}` : ''}`;
+}
+
+// "21–23 Eki", "30 Eki – 2 Kas", tek günse "21 Eki"; içinde bulunulan yıldan farklıysa yıl eklenir.
+export function rangeLabel(t) {
+  const end = t.endDate || t.date;
+  const [y1, m1, d1] = parts(t.date);
+  const [y2, m2, d2] = parts(end);
+  const year = new Date().getFullYear();
+  const tail = y2 !== year ? ` ${y2}` : '';
+  if (end === t.date) return `${d1} ${AY_KISA[m1 - 1]}${tail}`;
+  if (y1 === y2 && m1 === m2) return `${d1}–${d2} ${AY_KISA[m2 - 1]}${tail}`;
+  return `${d1} ${AY_KISA[m1 - 1]}${y1 !== y2 ? ` ${y1}` : ''} – ${d2} ${AY_KISA[m2 - 1]}${tail}`;
+}
+
+export const firstName = (name) => String(name).split(/\s+/)[0];

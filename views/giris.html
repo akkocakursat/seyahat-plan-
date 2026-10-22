@@ -2,35 +2,30 @@
 <html lang="tr">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#ffffff">
   <title>Giriş · Seyahat Defteri</title>
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/static/css/app.css">
   <script type="module" src="/static/js/giris.js"></script>
 </head>
-<body>
-  <header class="band">
-    <div class="band-inner">
-      <div class="brand">
-        <img class="logo" src="/static/favicon.svg" alt="" width="28" height="28">
-        <h1>Seyahat Defteri</h1>
-      </div>
-    </div>
-  </header>
+<body class="login-page">
   <main class="login-wrap">
-    <form class="card login" id="login-form" novalidate>
-      <h2>Giriş</h2>
-      <label class="field">
-        <span>Kullanıcı adı</span>
+    <form class="login" id="login-form" novalidate>
+      <img class="logo logo-big" src="/static/favicon.svg" alt="" width="48" height="48">
+      <h1>Seyahat Defteri</h1>
+      <p class="login-sub">Ekibin iş seyahatleri tek yerde.</p>
+      <div class="field">
+        <label for="username">Kullanıcı adı</label>
         <input name="username" id="username" autocomplete="username" autocapitalize="none" spellcheck="false" required maxlength="100">
-      </label>
-      <label class="field">
-        <span>Parola</span>
+      </div>
+      <div class="field">
+        <label for="password">Parola</label>
         <input name="password" id="password" type="password" autocomplete="current-password" required maxlength="1024">
-      </label>
+      </div>
       <p class="form-error" id="login-error" role="alert" hidden></p>
-      <button type="submit" class="btn btn-primary btn-block" id="login-submit">Giriş yap</button>
+      <button type="submit" class="btn btn-primary btn-wide" id="login-submit">Giriş yap</button>
     </form>
   </main>
 </body>

@@ -48,7 +48,7 @@ export function buildSite(outDir = resolve(ROOT, '_site'), env = process.env) {
   const csp = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; " +
     `connect-src ${url}; form-action 'self'; base-uri 'none'; object-src 'none'`;
   const meta = `<meta http-equiv="Content-Security-Policy" content="${csp}">\n  <meta name="referrer" content="no-referrer">`;
-  for (const name of ['index.html', 'giris.html', 'kisi.html']) {
+  for (const name of ['index.html', 'giris.html']) {
     const html = readFileSync(resolve(ROOT, 'views', name), 'utf8')
       .replace('<meta charset="utf-8">', `<meta charset="utf-8">\n  ${meta}`)
       .replaceAll('"/static/', `"${assetDir}/`);

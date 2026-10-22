@@ -133,6 +133,16 @@ export function validateTripPatch(body) {
   return out;
 }
 
+// Kullanıcı adı anahtarı: küçük harf, Türkçe harfler ASCII karşılıklarına ("Kürşat" → "kursat").
+// Kullanıcı adları yalnızca ASCII saklandığı için giriş bu anahtarla aranır.
+export function usernameKey(value) {
+  return String(value).trim()
+    .replace(/İ/g, 'i').replace(/I/g, 'ı')
+    .toLocaleLowerCase('tr')
+    .replace(/[çğıöşüâîû]/g, (c) => ({ ç: 'c', ğ: 'g', ı: 'i', ö: 'o', ş: 's', ü: 'u', â: 'a', î: 'i', û: 'u' })[c])
+    .replace(/\u0307/g, '');
+}
+
 export function validateLogin(body) {
   assertPlainObject(body);
   rejectUnknown(body, ['username', 'password']);

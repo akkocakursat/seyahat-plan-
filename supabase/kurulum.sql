@@ -630,7 +630,6 @@ declare
   v_user seyahat.users;
   v_from date;
   v_to date;
-  v_keys boolean;
   v_retry integer := seyahat.general_limit();
 begin
   if v_retry > 0 then return seyahat.err(429, 'Çok fazla istek. Lütfen biraz sonra tekrar deneyin.', v_retry); end if;
@@ -640,8 +639,6 @@ begin
     select d_from, d_to into v_from, v_to from seyahat.parse_month(p_ay);
     if v_from is null then return seyahat.err(400, 'Ay YYYY-AA biçiminde olmalıdır (2000–2100).'); end if;
   end if;
-  -- Görüntüleyici paylaşım anahtarlarını göremez.
-  v_keys := v_user.role in ('admin', 'editor');
   return json_build_object('kisiler', coalesce((
     select json_agg(
       jsonb_strip_nulls(jsonb_build_object(
@@ -649,59 +646,9 @@ begin
         'planned', (select count(*) from seyahat.trips t where t.person_id = p.id and t.status = 'planned' and t.deleted_at is null
                       and (v_from is null or (t.date <= v_to and t.end_date >= v_from))),
         'done', (select count(*) from seyahat.trips t where t.person_id = p.id and t.status = 'done' and t.deleted_at is null
-                   and (v_from is null or (t.date <= v_to and t.end_date >= v_from))),
-        'shareKey', case when v_keys then p.share_key end))
+                   and (v_from is null or (t.date <= v_to and t.end_date >= v_from)))))
       order by p.id)
     from seyahat.people p), '[]'::json));
-end $$;
-
-create or replace function public.link_yenile(p_token text, p_kisi_id bigint) returns json
-language plpgsql volatile security definer set search_path = '' as $$
-declare
-  v_user seyahat.users;
-  v_name text;
-  v_key text := seyahat.random_token(24);
-  v_retry integer := seyahat.general_limit();
-begin
-  if v_retry > 0 then return seyahat.err(429, 'Çok fazla istek. Lütfen biraz sonra tekrar deneyin.', v_retry); end if;
-  v_user := seyahat.auth(p_token);
-  if v_user.id is null then return seyahat.err(401, 'Oturum gerekli.'); end if;
-  if v_user.role <> 'admin' then return seyahat.err(403, 'Bu işlem için yetkiniz yok.'); end if;
-  update seyahat.people set share_key = v_key where id = p_kisi_id returning name into v_name;
-  if v_name is null then return seyahat.err(404, 'Kişi bulunamadı.'); end if;
-  perform seyahat.audit_log(v_user, 'link_yenile', jsonb_build_object('kisiId', p_kisi_id, 'ad', v_name));
-  return json_build_object('shareKey', v_key);
-end $$;
-
--- Giriş gerektirmez. Yalnızca kişi adı ve kayıtların region/date/note/status alanları döner.
-create or replace function public.paylasim(p_anahtar text, p_ay text default null) returns json
-language plpgsql volatile security definer set search_path = '' as $$
-declare
-  v_ip text := seyahat.client_ip();
-  v_person seyahat.people;
-  v_from date;
-  v_to date;
-  v_retry integer := seyahat.general_limit();
-begin
-  if v_retry > 0 then return seyahat.err(429, 'Çok fazla istek. Lütfen biraz sonra tekrar deneyin.', v_retry); end if;
-  if seyahat.rl_hit('paylasim:' || v_ip, interval '1 minute') > 30 then
-    return seyahat.err(429, 'Çok fazla istek. Lütfen biraz sonra tekrar deneyin.', seyahat.rl_retry('paylasim:' || v_ip));
-  end if;
-  if p_anahtar is null or p_anahtar !~ '^[A-Za-z0-9_-]{32}$' then
-    return seyahat.err(404, 'Bu link geçersiz ya da yenilenmiş.');
-  end if;
-  select * into v_person from seyahat.people where share_key = p_anahtar;
-  if v_person.id is null then return seyahat.err(404, 'Bu link geçersiz ya da yenilenmiş.'); end if;
-  if p_ay is not null then
-    select d_from, d_to into v_from, v_to from seyahat.parse_month(p_ay);
-    if v_from is null then return seyahat.err(400, 'Ay YYYY-AA biçiminde olmalıdır (2000–2100).'); end if;
-  end if;
-  return json_build_object('name', v_person.name, 'kayitlar', coalesce((
-    select json_agg(json_build_object('region', t.region, 'date', to_char(t.date, 'YYYY-MM-DD'),
-                                      'endDate', to_char(t.end_date, 'YYYY-MM-DD'),
-                                      'note', t.note, 'status', t.status) order by t.date, t.id)
-    from seyahat.trips t
-    where t.person_id = v_person.id and t.deleted_at is null and (v_from is null or (t.date <= v_to and t.end_date >= v_from))), '[]'::json));
 end $$;
 
 -- ---------------------------------------------------------------- Yetkiler
@@ -717,8 +664,17 @@ revoke execute on function public.kayit_ekle(text, jsonb) from public;
 revoke execute on function public.kayit_guncelle(text, bigint, jsonb) from public;
 revoke execute on function public.kayit_sil(text, bigint) from public;
 revoke execute on function public.kisiler_listele(text, text) from public;
-revoke execute on function public.link_yenile(text, bigint) from public;
-revoke execute on function public.paylasim(text, text) from public;
+
+-- Kişi linki özelliği kaldırıldı: daha önce kurulmuş paylaşım ve link yenileme fonksiyonları çağrılamaz.
+do $$
+begin
+  if to_regprocedure('public.paylasim(text, text)') is not null then
+    revoke execute on function public.paylasim(text, text) from public, anon, authenticated;
+  end if;
+  if to_regprocedure('public.link_yenile(text, bigint)') is not null then
+    revoke execute on function public.link_yenile(text, bigint) from public, anon, authenticated;
+  end if;
+end $$;
 
 -- Supabase Auth kullanılmadığı için yalnızca anon rolü çağırabilir.
 revoke execute on all functions in schema public from authenticated;
@@ -732,8 +688,6 @@ grant execute on function public.kayit_ekle(text, jsonb) to anon;
 grant execute on function public.kayit_guncelle(text, bigint, jsonb) to anon;
 grant execute on function public.kayit_sil(text, bigint) to anon;
 grant execute on function public.kisiler_listele(text, text) to anon;
-grant execute on function public.link_yenile(text, bigint) to anon;
-grant execute on function public.paylasim(text, text) to anon;
 
 
 -- ---------------------------------------------------------------- İlk veriler
