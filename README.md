@@ -49,6 +49,13 @@ Selim Kutlubay, Yusuf Özoğlu, Selahattin Çomuoğlu, Kürşat Akkoca.
 - Satır işlemleri: **Gerçekleşti** / **Plana al**, **Düzenle** (form doldurulur, düğme *Güncelle* olur),
   **Sil** (satır içinde onay). Tarihi geçmiş ama hâlâ planlanan kayıtlarda **Tarihi geçti** uyarısı görünür.
 - **Kişi linkini kopyala** (editör, yönetici) ve **Linki yenile** (yalnızca yönetici, sayfa içinde onay).
+- **Yıllık hafta planı** (kişi seçili değilken varsayılan görünüm): satırlarda ISO haftaları (1–52/53, ay ayraçlarıyla),
+  sütunlarda kişiler. Her hücrede o haftanın seyahatleri renkli etiketlerle görünür (planlanan amber, gerçekleşen yeşil,
+  tarihi geçmiş kırmızı); bu hafta vurgulanır. Hücredeki **+** ile o haftaya plan eklenir, etikete tıklayınca kayıt
+  penceresi açılır (Gerçekleşti / Plana al, Düzenle, Sil, Aylık görünümde aç). **Haftalara toplu planla** ile bir kişi
+  için seçilen her haftaya ayrı kayıt eklenir; haftalar numaralara tıklanarak ya da `1-5, 35, 37` veya
+  `1-2-3-4-5-35-37` yazılarak seçilir (iki parçalı `35-37` aralık, daha uzun zincir liste sayılır).
+  "Aylık kartlar" sekmesi önceki aylık görünümdür; seçilen görünüm tarayıcıda hatırlanır.
 - **Kişi sayfası** (`/kisi/<anahtar>`): giriş gerektirmez, salt-okunurdur; yalnızca Bölge, Tarih ve Not gösterilir.
   Link yenilenince eski link anında "Bu link geçersiz ya da yenilenmiş" mesajı verir.
 
@@ -59,7 +66,7 @@ Selim Kutlubay, Yusuf Özoğlu, Selahattin Çomuoğlu, Kürşat Akkoca.
 | POST | `/api/giris` | Giriş; `{username, password}` |
 | GET | `/api/oturum` | Oturum bilgisi ve CSRF anahtarı |
 | POST | `/api/cikis` | Çıkış |
-| GET | `/api/kayitlar?ay=2026-10` | O ayın kayıtları; ay verilmezse tümü |
+| GET | `/api/kayitlar?ay=2026-10` | O ayın kayıtları; ay verilmezse tümü. `?bas=2025-12-29&bit=2027-01-03` ile tarih aralığı (en fazla 400 gün) |
 | POST | `/api/kayitlar` | Yeni kayıt; `{personId, region, date, note, status}` |
 | PATCH | `/api/kayitlar/:id` | Kısmi güncelleme |
 | DELETE | `/api/kayitlar/:id` | Silme |

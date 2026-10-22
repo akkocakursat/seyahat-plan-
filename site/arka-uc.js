@@ -82,6 +82,9 @@ export async function api(method, path, body) {
       try { await rpc('cikis', { p_token: token }); } finally { writeToken(null); }
       return null;
     case 'GET kayitlar':
+      if (url.searchParams.has('bas') || url.searchParams.has('bit')) {
+        return rpc('kayitlar_aralik', { p_token: token, p_bas: url.searchParams.get('bas'), p_bit: url.searchParams.get('bit') });
+      }
       return rpc('kayitlar_listele', { p_token: token, p_ay: ay });
     case 'POST kayitlar':
       return rpc('kayit_ekle', { p_token: token, p_kayit: body });

@@ -120,6 +120,15 @@ begin
   assert r -> 'kayit' is not null, '29 Şubat 2028 geçerli';
   ids := ids || (r -> 'kayit' ->> 'id')::bigint;
 
+  -- Tarih aralığı (yıllık hafta planı)
+  r := public.kayitlar_aralik(ed, '2026-09-30', '2026-10-31');
+  assert (select array_agg(e ->> 'date' order by e ->> 'date') from json_array_elements(r -> 'kayitlar') e
+          where e ->> 'region' = 'Sınır') = array['2026-09-30', '2026-10-01', '2026-10-31'], 'aralık';
+  assert (public.kayitlar_aralik(ed, '2026-05-01', '2026-04-01') ->> 'status')::int = 400;
+  assert (public.kayitlar_aralik(ed, '2026-01-01', '2027-06-01') ->> 'status')::int = 400;
+  assert (public.kayitlar_aralik(ed, '2026-02-30', '2026-03-01') ->> 'status')::int = 400;
+  assert (public.kayitlar_aralik(null, '2026-01-01', '2026-02-01') ->> 'status')::int = 401;
+
   -- Geçersiz girdiler
   foreach bad in array array[
     jsonb_build_object('personId', pid, 'region', 'Bursa', 'date', '2026-02-30'),

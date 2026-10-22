@@ -88,6 +88,23 @@ test('aya göre listeleme sınır günleriyle doğru', async () => {
   for (const id of Object.values(ids)) await s.req('DELETE', `/api/kayitlar/${id}`, { session: ed });
 });
 
+test('tarih aralığıyla listeleme (yıllık hafta planı)', async () => {
+  const pid = people[3].id;
+  const ids = [];
+  for (const date of ['2025-12-28', '2025-12-29', '2027-01-03', '2027-01-04']) {
+    ids.push((await add({ personId: pid, region: `Aralık ${date}`, date })).json.kayit.id);
+  }
+  // 2026'nın ISO haftaları: 29.12.2025 (1. hafta pazartesi) – 03.01.2027 (53. hafta pazar)
+  const res = await s.req('GET', '/api/kayitlar?bas=2025-12-29&bit=2027-01-03', { session: ed });
+  assert.equal(res.status, 200);
+  assert.deepEqual(res.json.kayitlar.filter((k) => k.personId === pid).map((k) => k.date), ['2025-12-29', '2027-01-03']);
+  for (const q of ['bas=2026-01-01', 'bas=2026-02-30&bit=2026-03-01', 'bas=2026-05-01&bit=2026-04-01',
+    'bas=2026-01-01&bit=2027-06-01', 'ay=2026-10&bas=2026-10-01&bit=2026-10-31']) {
+    assert.equal((await s.req('GET', `/api/kayitlar?${q}`, { session: ed })).status, 400, q);
+  }
+  for (const id of ids) await s.req('DELETE', `/api/kayitlar/${id}`, { session: ed });
+});
+
 test('geçersiz girdiler reddedilir', async () => {
   const base = { personId: people[0].id, region: 'Bursa', date: '2026-10-10', status: 'planned' };
   const cases = [

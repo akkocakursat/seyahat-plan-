@@ -2,6 +2,9 @@ import {
   el, clear, api, setCsrf, ApiError, STATUS_LABEL, ROLE_LABEL, currentMonth, monthKey, monthLabel,
   renderMonthBar, sortTrips, todayISO, regionTag, dateText, formatDate, MONTHS, yollar,
 } from './ortak.js';
+import {
+  renderWeekPlan, scrollToCurrentWeek, openAddDialog, openTripDialog, openBulkDialog, yearRange,
+} from './hafta.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -16,13 +19,30 @@ const state = {
   confirmDeleteId: null,
   confirmRenew: false,
   busy: false,
+  // Kişi seçili değilken: 'ay' (aylık kartlar) ya da 'hafta' (yıllık hafta planı tablosu)
+  view: readPref('seyahat_gorunum', 'hafta') === 'ay' ? 'ay' : 'hafta',
+  year: new Date().getFullYear(),
+  yearTrips: [],
+  yearLoaded: null,
+  showDone: readPref('seyahat_gerceklesen', '1') === '1',
 };
+
+function readPref(key, fallback) {
+  try { return localStorage.getItem(key) ?? fallback; } catch { return fallback; }
+}
+function writePref(key, value) {
+  try { localStorage.setItem(key, value); } catch { /* depolama kapalı */ }
+}
+
+const weekMode = () => state.view === 'hafta' && !state.personId;
 
 const canEdit = () => state.user && (state.user.role === 'admin' || state.user.role === 'editor');
 const isAdmin = () => state.user?.role === 'admin';
 const person = (id) => state.people.find((p) => p.id === id);
+// Hafta görünümünde menüdeki sayılar seçili yılın, aksi halde seçili ayın kayıtlarından hesaplanır.
 const tripsOf = (status, personId) =>
-  state.trips.filter((t) => t.status === status && (personId === undefined || t.personId === personId));
+  (weekMode() ? state.yearTrips : state.trips)
+    .filter((t) => t.status === status && (personId === undefined || t.personId === personId));
 
 // ---------- Bildirim ----------
 let flashTimer;
@@ -54,9 +74,20 @@ async function loadMonth() {
   state.trips = kayitlar.kayitlar;
 }
 
+async function loadYear() {
+  const { bas, bit } = yearRange(state.year);
+  const res = await api('GET', `/api/kayitlar?bas=${bas}&bit=${bit}`);
+  state.yearTrips = res.kayitlar;
+  state.yearLoaded = state.year;
+}
+
+async function loadAll() {
+  await Promise.all([loadMonth(), state.view === 'hafta' ? loadYear() : null]);
+}
+
 async function refresh() {
   try {
-    await loadMonth();
+    await loadAll();
   } catch (err) {
     handleError(err);
   }
@@ -69,7 +100,7 @@ async function mutate(fn, okMessage) {
   try {
     const result = await fn();
     if (okMessage) flash(typeof okMessage === 'function' ? okMessage(result) : okMessage);
-    await loadMonth();
+    await loadAll();
   } catch (err) {
     handleError(err);
   } finally {
@@ -78,21 +109,119 @@ async function mutate(fn, okMessage) {
   }
 }
 
+// Pencerelerden yapılan işlemler: hata pencerede gösterilsin diye fırlatılır; başarıda veri yenilenir.
+async function dialogAction(fn, message) {
+  try {
+    await fn();
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 401) handleError(err);
+    throw err;
+  }
+  flash(message);
+  try { await loadAll(); } catch (err) { handleError(err); }
+  render();
+}
+
 // ---------- Görünüm ----------
 function render() {
+  if (state.personId && !person(state.personId)) state.personId = null;
   renderSidebar();
+  // Tablo yeniden çizilirken kaydırma konumu korunur (yıl değişince bu haftaya gidilir).
+  const keepScroll = $('view').querySelector('.week-scroll')?.scrollTop;
+  const view = clear($('view'));
+  if (weekMode()) {
+    clear($('monthbar'));
+    view.append(renderViewTabs(), renderYear());
+    if (state.scrollToWeek) {
+      state.scrollToWeek = false;
+      scrollToCurrentWeek(view);
+    } else if (keepScroll) {
+      view.querySelector('.week-scroll').scrollTop = keepScroll;
+    }
+    return;
+  }
   renderMonthBar($('monthbar'), state.month, (m) => {
     state.month = m;
     state.editingId = null;
     state.confirmDeleteId = null;
     refresh();
   });
-  const view = clear($('view'));
-  if (state.personId && person(state.personId)) view.append(renderPerson());
-  else {
-    state.personId = null;
-    view.append(renderCards());
+  if (state.personId) view.append(renderPerson());
+  else view.append(renderViewTabs(), renderCards());
+}
+
+function renderViewTabs() {
+  const tab = (key, label) => el('button', {
+    type: 'button', class: `seg-btn${state.view === key ? ' is-active' : ''}`, 'aria-pressed': String(state.view === key), text: label,
+    onclick: () => switchView(key),
+  });
+  return el('div', { class: 'view-tabs segmented', role: 'group', 'aria-label': 'Görünüm' },
+    tab('hafta', 'Yıllık hafta planı'), tab('ay', 'Aylık kartlar'));
+}
+
+async function switchView(key) {
+  if (state.view === key) return;
+  state.view = key;
+  writePref('seyahat_gorunum', key);
+  if (key === 'hafta' && state.yearLoaded !== state.year) {
+    try { await loadYear(); } catch (err) { handleError(err); }
+    state.scrollToWeek = true;
   }
+  render();
+}
+
+function renderYear() {
+  const editable = canEdit();
+  return renderWeekPlan({
+    year: state.year,
+    trips: state.yearTrips,
+    people: state.people,
+    editable,
+    showDone: state.showDone,
+    onYear: async (y) => {
+      state.year = y;
+      try { await loadYear(); } catch (err) { handleError(err); }
+      state.scrollToWeek = true;
+      render();
+    },
+    onShowDone: (v) => { state.showDone = v; writePref('seyahat_gerceklesen', v ? '1' : '0'); render(); },
+    onAdd: (personId, week) => openAddDialog({
+      people: state.people, personId, year: state.year, week,
+      onSubmit: (payload) => dialogAction(() => api('POST', '/api/kayitlar', payload), 'Plan eklendi.'),
+    }),
+    onTrip: (trip) => openTripDialog({
+      trip, people: state.people, editable,
+      onStatus: (t, status) => dialogAction(() => api('PATCH', `/api/kayitlar/${t.id}`, { status }),
+        status === 'done' ? `${formatDate(t.date)} kaydı Gerçekleşen'e taşındı.` : `${formatDate(t.date)} kaydı Planlanan'a alındı.`),
+      onUpdate: (t, payload) => dialogAction(() => api('PATCH', `/api/kayitlar/${t.id}`, payload), 'Kayıt güncellendi.'),
+      onDelete: (t) => dialogAction(() => api('DELETE', `/api/kayitlar/${t.id}`), 'Kayıt silindi.'),
+      onOpenMonth: (t) => {
+        const [y, m] = t.date.split('-').map(Number);
+        state.month = { y, m };
+        state.personId = t.personId;
+        state.status = t.status;
+        state.editingId = null;
+        state.confirmDeleteId = null;
+        refresh();
+      },
+    }),
+    onBulk: () => openBulkDialog({
+      people: state.people, personId: state.people[0]?.id, year: state.year, trips: state.yearTrips,
+      onSubmit: (payload, dates, progress) => dialogAction(async () => {
+        let done = 0;
+        for (const date of dates) {
+          try {
+            await api('POST', '/api/kayitlar', { ...payload, date, status: 'planned' });
+          } catch (err) {
+            if (done) { await loadAll().catch(() => {}); render(); }
+            throw new ApiError(err.status, `${done} kayıt eklendi, sonra hata oluştu: ${err.message}`);
+          }
+          done += 1;
+          progress(done);
+        }
+      }, `${dates.length} haftaya plan eklendi.`),
+    }),
+  });
 }
 
 function renderSidebar() {
@@ -349,10 +478,11 @@ async function init() {
     location.replace(yollar.giris);
   });
   try {
-    await loadMonth();
+    await loadAll();
   } catch (err) {
     handleError(err);
   }
+  state.scrollToWeek = true;
   $('loading').hidden = true;
   $('layout').hidden = false;
   render();

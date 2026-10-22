@@ -7,7 +7,7 @@ import {
 } from './auth.js';
 import { Counter, rateLimit } from './ratelimit.js';
 import {
-  ValidationError, parseMonth, parseId, validateTripCreate, validateTripPatch, validateLogin,
+  ValidationError, parseMonth, parseId, isValidDate, validateTripCreate, validateTripPatch, validateLogin,
 } from './validate.js';
 
 const LOGIN_ERROR = 'Kullanıcı adı veya parola hatalı.';
@@ -217,8 +217,20 @@ export function createApp({ config, db, logger = console, limits = {} }) {
 
   const TRIP_COLS = 'id, person_id AS personId, region, date, note, status';
 
+  // ?bas=YYYY-AA-GG&bit=YYYY-AA-GG: yıllık hafta planı için tarih aralığı (en fazla 400 gün).
+  function dateRange(req) {
+    const { bas, bit } = req.query;
+    if (bas === undefined && bit === undefined) return null;
+    if (req.query.ay !== undefined) throw new ValidationError('ay ile bas/bit birlikte kullanılamaz.');
+    if (!isValidDate(bas) || !isValidDate(bit) || bas > bit) {
+      throw new ValidationError('bas ve bit geçerli YYYY-AA-GG tarihleri olmalı ve bas, bit\'ten sonra olmamalıdır.');
+    }
+    if ((Date.parse(bit) - Date.parse(bas)) / 86_400_000 > 400) throw new ValidationError('Tarih aralığı en fazla 400 gün olabilir.');
+    return { from: bas, to: bit };
+  }
+
   api.get('/kayitlar', requireAuth, (req, res) => {
-    const range = monthRange(req);
+    const range = dateRange(req) ?? monthRange(req);
     const rows = range
       ? db.prepare(`SELECT ${TRIP_COLS} FROM trips WHERE date BETWEEN ? AND ? ORDER BY date, id`).all(range.from, range.to)
       : db.prepare(`SELECT ${TRIP_COLS} FROM trips ORDER BY date, id`).all();

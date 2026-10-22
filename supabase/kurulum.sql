@@ -473,6 +473,28 @@ begin
     where t.deleted_at is null and (v_from is null or t.date between v_from and v_to)), '[]'::json));
 end $$;
 
+-- Yıllık hafta planı için tarih aralığıyla listeleme (en fazla 400 gün).
+create or replace function public.kayitlar_aralik(p_token text, p_bas text, p_bit text) returns json
+language plpgsql volatile security definer set search_path = '' as $$
+declare
+  v_user seyahat.users;
+  v_from date := seyahat.parse_date(p_bas);
+  v_to date := seyahat.parse_date(p_bit);
+  v_retry integer := seyahat.general_limit();
+begin
+  if v_retry > 0 then return seyahat.err(429, 'Çok fazla istek. Lütfen biraz sonra tekrar deneyin.', v_retry); end if;
+  v_user := seyahat.auth(p_token);
+  if v_user.id is null then return seyahat.err(401, 'Oturum gerekli.'); end if;
+  if v_from is null or v_to is null or v_from > v_to then
+    return seyahat.err(400, 'bas ve bit geçerli YYYY-AA-GG tarihleri olmalı ve bas, bit''ten sonra olmamalıdır.');
+  end if;
+  if v_to - v_from > 400 then return seyahat.err(400, 'Tarih aralığı en fazla 400 gün olabilir.'); end if;
+  return json_build_object('kayitlar', coalesce((
+    select json_agg(seyahat.trip_json(t) order by t.date, t.id)
+    from seyahat.trips t
+    where t.deleted_at is null and t.date between v_from and v_to), '[]'::json));
+end $$;
+
 create or replace function public.kayit_ekle(p_token text, p_kayit jsonb) returns json
 language plpgsql volatile security definer set search_path = '' as $$
 declare
@@ -637,6 +659,7 @@ revoke execute on function public.giris(text, text, text) from public;
 revoke execute on function public.oturum(text) from public;
 revoke execute on function public.cikis(text) from public;
 revoke execute on function public.kayitlar_listele(text, text) from public;
+revoke execute on function public.kayitlar_aralik(text, text, text) from public;
 revoke execute on function public.kayit_ekle(text, jsonb) from public;
 revoke execute on function public.kayit_guncelle(text, bigint, jsonb) from public;
 revoke execute on function public.kayit_sil(text, bigint) from public;
@@ -651,6 +674,7 @@ grant execute on function public.giris(text, text, text) to anon;
 grant execute on function public.oturum(text) to anon;
 grant execute on function public.cikis(text) to anon;
 grant execute on function public.kayitlar_listele(text, text) to anon;
+grant execute on function public.kayitlar_aralik(text, text, text) to anon;
 grant execute on function public.kayit_ekle(text, jsonb) to anon;
 grant execute on function public.kayit_guncelle(text, bigint, jsonb) to anon;
 grant execute on function public.kayit_sil(text, bigint) to anon;
