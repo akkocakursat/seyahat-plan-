@@ -237,6 +237,8 @@ Aynı arayüz, sunucu gerektirmeden GitHub Pages'te de yayınlanır; veriler Sup
    ```
 
    Aynı kullanıcı adıyla tekrar çalıştırmak parolayı ve rolü günceller, açık oturumları kapatır.
+   Girişte kullanıcı adı büyük/küçük harf ve Türkçe harf duyarsızdır: `kursat` hesabına `Kürşat` ya da `KÜRŞAT`
+   yazılarak da girilir (kullanıcı adları İngilizce harflerle saklanır).
    Not: SQL düzenleyicisinin geçmişi çalıştırılan sorguları saklar; parolayı girdikten sonra o sorguyu
    geçmişten silebilir ya da kullanıcıya ilk girişte değiştirmesini söyleyebilirsiniz.
 

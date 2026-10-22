@@ -212,6 +212,19 @@ begin
   assert public.giris('yonetici', 'yonetici-parola-123') ->> 'token' is not null, 'başka kullanıcı etkilenmez';
 end $$;
 
+-- Türkçe harfli kullanıcı adı: "Kürşat", "KÜRŞAT", "kursat" aynı hesap
+reset role;
+insert into seyahat.users (username, password_hash, role)
+values ('kursat', extensions.crypt('turkce-parola-123', extensions.gen_salt('bf', 12)), 'admin');
+set role anon;
+do $$
+begin
+  assert public.giris('Kürşat', 'turkce-parola-123') ->> 'token' is not null, 'Kürşat';
+  assert public.giris('KÜRŞAT', 'turkce-parola-123') ->> 'token' is not null, 'KÜRŞAT';
+  assert public.giris(' kursat ', 'turkce-parola-123') ->> 'token' is not null, 'kursat';
+  assert public.giris('SELİM', 'x') ->> 'error' = 'Kullanıcı adı veya parola hatalı.';
+end $$;
+
 -- Başarılı giriş kullanıcı sayacını sıfırlar
 do $$
 declare

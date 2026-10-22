@@ -304,6 +304,12 @@ language sql immutable set search_path = '' as $$
                             'date', to_char(t.date, 'YYYY-MM-DD'), 'note', t.note, 'status', t.status)
 $$;
 
+-- Kullanıcı adı anahtarı: küçük harf, Türkçe harfler ASCII karşılıklarına çevrilir.
+create or replace function seyahat.username_key(p text) returns text
+language sql immutable set search_path = '' as $$
+  select translate(lower(translate(btrim(p), 'İIÇĞÖŞÜÂÎÛ', 'iıçğöşüâîû')), 'çğıöşüâîû' || U&'\0307', 'cgiosuaiu')
+$$;
+
 create or replace function seyahat.audit_log(p_user seyahat.users, p_action text, p_detail jsonb default null) returns void
 language sql volatile set search_path = '' as $$
   insert into seyahat.audit (user_id, username, action, detail, ip)
@@ -392,7 +398,8 @@ begin
   if p_username is null or p_password is null or char_length(p_username) > 100 or char_length(p_password) > 1024 then
     return seyahat.err(401, 'Kullanıcı adı veya parola hatalı.');
   end if;
-  v_key := lower(btrim(p_username));
+  -- Türkçe harfler sadeleştirilir: "Kürşat", "KÜRŞAT" ve "kursat" aynı kullanıcıdır.
+  v_key := seyahat.username_key(p_username);
 
   -- Deneme doğrulamadan önce sayılır (satır kilidi paralel denemeleri sıraya sokar);
   -- başarılı girişte sayım geri alınır, yani yalnızca hatalı denemeler kalıcıdır.
@@ -404,7 +411,7 @@ begin
     return seyahat.err(429, 'Çok fazla hatalı deneme. Lütfen daha sonra tekrar deneyin.', seyahat.rl_retry('giris-k:' || v_key));
   end if;
 
-  select * into v_user from seyahat.users where lower(username) = v_key;
+  select * into v_user from seyahat.users where seyahat.username_key(username) = v_key;
   -- Kullanıcı yoksa da aynı maliyette bir doğrulama yapılır.
   v_hash := coalesce(v_user.password_hash, (select dummy_hash from seyahat.settings));
   if extensions.crypt(p_password, v_hash) <> v_hash or v_user.id is null then
