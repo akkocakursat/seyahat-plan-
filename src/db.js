@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS trips (
   date       TEXT NOT NULL CHECK (date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
   end_date   TEXT CHECK (end_date >= date),
   note       TEXT NOT NULL DEFAULT '' CHECK (length(note) <= 500),
+  details    TEXT CHECK (length(details) <= 5000),  -- not (en fazla 5000 karakter); eski kısa notlar "note" sütunundadır
   status     TEXT NOT NULL CHECK (status IN ('planned', 'done')),
   created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
@@ -81,6 +82,7 @@ export function openDatabase(path) {
 function migrate(db) {
   const cols = db.prepare('PRAGMA table_info(trips)').all().map((c) => c.name);
   if (!cols.includes('end_date')) db.exec('ALTER TABLE trips ADD COLUMN end_date TEXT');
+  if (!cols.includes('details')) db.exec('ALTER TABLE trips ADD COLUMN details TEXT');
   db.exec('UPDATE trips SET end_date = date WHERE end_date IS NULL OR end_date < date');
 }
 

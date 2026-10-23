@@ -156,7 +156,7 @@ begin
     jsonb_build_object('personId', -1, 'region', 'Bursa', 'date', '2026-10-10'),
     jsonb_build_object('personId', 1.5, 'region', 'Bursa', 'date', '2026-10-10'),
     jsonb_build_object('personId', pid, 'region', 'Bursa', 'date', '2026-10-10', 'extra', 1),
-    jsonb_build_object('personId', pid, 'region', 'Bursa', 'date', '2026-10-10', 'note', repeat('n', 501)),
+    jsonb_build_object('personId', pid, 'region', 'Bursa', 'date', '2026-10-10', 'note', repeat('n', 5001)),
     jsonb_build_object('personId', pid, 'region', repeat('r', 81), 'date', '2026-10-10'),
     jsonb_build_object('personId', pid, 'region', '   ', 'date', '2026-10-10'),
     jsonb_build_object('personId', pid, 'region', U&'\202E\200B', 'date', '2026-10-10'),
@@ -177,6 +177,12 @@ begin
   assert r -> 'kayit' ->> 'region' = 'Ankara', 'temizleme: ' || (r -> 'kayit' ->> 'region');
   assert char_length(r -> 'kayit' ->> 'note') = 500, 'not uzunluğu';
   ids := ids || (r -> 'kayit' ->> 'id')::bigint;
+
+  -- Uzun not (5000 karaktere kadar) tam saklanır, silinebilir
+  r := public.kayit_ekle(ed, jsonb_build_object('personId', pid, 'region', 'Konya', 'date', '2026-10-22', 'note', repeat('Fiyat görüşmesi. ', 250)));
+  assert char_length(r -> 'kayit' ->> 'note') = 4249, 'uzun not (sondaki boşluk kırpılır): ' || char_length(r -> 'kayit' ->> 'note');
+  ids := ids || (r -> 'kayit' ->> 'id')::bigint;
+  assert public.kayit_guncelle(ed, (r -> 'kayit' ->> 'id')::bigint, '{"note": ""}') -> 'kayit' ->> 'note' = '', 'not silinebilmeli';
 
   -- İzleyici yazamaz
   assert (public.kayit_ekle(vw, jsonb_build_object('personId', pid, 'region', 'Konya', 'date', '2026-10-20')) ->> 'status')::int = 403;

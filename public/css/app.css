@@ -277,6 +277,8 @@ button.trip-open:hover .trip-region { text-decoration: underline; text-underline
   padding: 0; border: 0; border-radius: 18px; background: var(--paper); color: var(--ink);
   width: min(560px, calc(100vw - 32px)); max-height: calc(100dvh - 48px); box-shadow: 0 24px 64px rgb(23 32 42 / 28%);
 }
+.sheet { overflow: auto; overscroll-behavior: contain; }
+.sheet-wide { width: min(820px, calc(100vw - 32px)); }
 .sheet::backdrop { background: rgb(23 32 42 / 40%); }
 .sheet-inner { padding: 8px 22px 22px; }
 .sheet-grip { display: none; }
@@ -361,7 +363,13 @@ button.trip-open:hover .trip-region { text-decoration: underline; text-underline
 .facts { display: grid; grid-template-columns: 90px minmax(0, 1fr); gap: 10px 14px; margin: 16px 0 0; font-size: 16px; }
 .facts dt { color: var(--slate); }
 .facts dd { margin: 0; overflow-wrap: anywhere; }
-.facts .note { white-space: pre-line; }
+.note-block { margin-top: 18px; padding: 14px 16px 16px; border: 1px solid var(--line); border-left: 4px solid var(--signal); border-radius: 12px; background: #fffdf5; }
+.note-block h3 { margin: 0 0 8px; font-size: 13px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--slate); }
+.note-block p { margin: 0; font-size: 16px; line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }
+.label-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.note-count { font-size: 13px; color: var(--slate); }
+.note-count.is-bad { color: var(--late); font-weight: 600; }
+textarea[name="note"] { min-height: 140px; resize: vertical; line-height: 1.55; }
 .muted { color: var(--slate); }
 
 /* ---------- Giriş ---------- */

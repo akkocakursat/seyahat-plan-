@@ -45,6 +45,7 @@ export function parseId(value) {
 
 const TRIP_FIELDS = ['personId', 'region', 'date', 'endDate', 'note', 'status'];
 export const MAX_TRIP_DAYS = 365;
+export const MAX_NOTE = 5000;
 
 // İki tarih arasındaki gün sayısı (başlangıç ve bitiş dahil).
 export function tripDays(start, end) {
@@ -96,7 +97,7 @@ function field(name, value) {
       if (value === null || value === undefined) return '';
       if (typeof value !== 'string') throw new ValidationError('Not metin olmalıdır.');
       const s = cleanText(value, { multiline: true });
-      if ([...s].length > 500) throw new ValidationError('Not en fazla 500 karakter olabilir.');
+      if ([...s].length > MAX_NOTE) throw new ValidationError(`Not en fazla ${MAX_NOTE} karakter olabilir.`);
       return s;
     }
     case 'status': {

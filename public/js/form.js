@@ -8,6 +8,7 @@ import { searchCities, splitCities, joinCities, SEHIRLER, fold } from './sehirle
 
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
 const QUICK_DAYS = [1, 2, 3, 5];
+const MAX_NOTE = 5000;
 let uid = 0;
 const nextId = (p) => `${p}-${(uid += 1)}`;
 
@@ -106,8 +107,18 @@ export function fillTripForm(dlg, body, { people, selfId, trip, defaults = {}, a
     { value: 'planned', label: 'Planlandı', className: 'pill-planned' },
     { value: 'done', label: 'Gerçekleşti', className: 'pill-done' },
   ], trip?.status ?? defaults.status ?? 'planned', { className: 'choice-status' });
-  const note = el('textarea', { id: nextId('not'), name: 'note', maxLength: 500, rows: 3, placeholder: 'Toplantı, ziyaret edilecek yer…', value: trip?.note ?? '' });
-  const noteField = el('div', { class: 'field', hidden: !trip?.note }, el('label', { for: note.id, text: 'Not' }), note);
+  const note = el('textarea', {
+    id: nextId('not'), name: 'note', maxLength: MAX_NOTE, rows: 6, placeholder: 'Görüşülen kişiler, fiyatlar, sonraki adımlar…', value: trip?.note ?? '',
+  });
+  const noteCount = el('span', { class: 'note-count', 'aria-live': 'polite' });
+  const countNote = () => {
+    const n = [...note.value].length;
+    noteCount.textContent = n > MAX_NOTE * 0.8 ? `${MAX_NOTE - n} karakter kaldı` : '';
+    noteCount.classList.toggle('is-bad', n > MAX_NOTE);
+  };
+  note.addEventListener('input', countNote);
+  const noteField = el('div', { class: 'field', hidden: !trip?.note },
+    el('div', { class: 'label-row' }, el('label', { for: note.id, text: 'Not' }), noteCount), note);
   const noteToggle = el('button', {
     type: 'button', class: 'text-btn', text: '+ Not ekle', hidden: Boolean(trip?.note),
     onclick: () => { noteField.hidden = false; noteToggle.hidden = true; note.focus(); },
@@ -234,7 +245,7 @@ export function fillTripForm(dlg, body, { people, selfId, trip, defaults = {}, a
           : !ISO.test(payload.date) || !ISO.test(payload.endDate) ? 'Gidiş ve dönüş tarihlerini seçin.'
             : !n ? 'Dönüş, gidişten önce olamaz.'
               : n > 365 ? 'Bir seyahat en fazla 365 gün olabilir.'
-                : [...payload.note].length > 500 ? 'Not en fazla 500 karakter olabilir.' : null;
+                : [...payload.note].length > MAX_NOTE ? `Not en fazla ${MAX_NOTE} karakter olabilir.` : null;
     let list = [payload];
     if (!problem && !editing && multi.checked) {
       if (weeksText.value.trim()) {
@@ -269,7 +280,7 @@ export function openTripForm(opts) {
 export function openTripDetail({ trip, people, editable, allTrips, onStatus, onUpdate, onDelete, onShowPerson }) {
   const who = people.find((p) => p.id === trip.personId);
   const body = el('div');
-  const dlg = openSheet(trip.region, body);
+  const dlg = openSheet(trip.region, body, { wide: [...(trip.note || '')].length > 280 });
   const n = tripDays(trip);
   const overdue = isOverdue(trip);
   const { week } = isoWeekOf(trip.date);
@@ -284,7 +295,8 @@ export function openTripDetail({ trip, people, editable, allTrips, onStatus, onU
       el('dl', { class: 'facts' },
         el('dt', { text: 'Kim' }), el('dd', { text: who ? who.name : '—' }),
         el('dt', { text: 'Ne zaman' }), el('dd', {}, `${rangeLabel(trip)} `, el('span', { class: 'muted', text: `(${n} gün, ${week}. hafta)` })),
-        trip.note ? el('dt', { text: 'Not' }) : null, trip.note ? el('dd', { class: 'note', text: trip.note }) : null),
+      ),
+      trip.note ? el('section', { class: 'note-block', 'aria-label': 'Not' }, el('h3', { text: 'Not' }), el('p', { text: trip.note })) : null,
       error, actions);
     if (editable) {
       const toDone = trip.status === 'planned';

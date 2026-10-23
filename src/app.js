@@ -211,7 +211,8 @@ export function createApp({ config, db, logger = console, limits = {} }) {
     return range;
   }
 
-  const TRIP_COLS = 'id, person_id AS personId, region, date, end_date AS endDate, note, status';
+  // Not "details" sütununda (5000 karakter); bundan önce kaydedilmiş kısa notlar "note" sütunundadır.
+  const TRIP_COLS = "id, person_id AS personId, region, date, end_date AS endDate, COALESCE(details, note) AS note, status";
 
   // ?bas=YYYY-AA-GG&bit=YYYY-AA-GG: yıllık hafta planı için tarih aralığı (en fazla 400 gün).
   function dateRange(req) {
@@ -240,7 +241,7 @@ export function createApp({ config, db, logger = console, limits = {} }) {
   api.post('/kayitlar', requireRole('admin', 'editor'), requireCsrf, (req, res) => {
     const t = validateTripCreate(req.body);
     if (!personExists(t.personId)) throw new ValidationError('Kişi bulunamadı.');
-    const info = db.prepare('INSERT INTO trips (person_id, region, date, end_date, note, status, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    const info = db.prepare("INSERT INTO trips (person_id, region, date, end_date, note, details, status, created_by) VALUES (?, ?, ?, ?, '', ?, ?, ?)")
       .run(t.personId, t.region, t.date, t.endDate, t.note, t.status, req.session.user_id);
     const trip = getTrip(Number(info.lastInsertRowid));
     audit(db, { ...actor(req), action: 'kayit_ekle', detail: trip });
@@ -248,7 +249,7 @@ export function createApp({ config, db, logger = console, limits = {} }) {
   });
 
   // Alan adı -> sütun adı eşlemesi sabittir; SQL'e yalnızca bu sabit adlar girer.
-  const PATCH_COLUMNS = { personId: 'person_id', region: 'region', date: 'date', endDate: 'end_date', note: 'note', status: 'status' };
+  const PATCH_COLUMNS = { personId: 'person_id', region: 'region', date: 'date', endDate: 'end_date', note: 'details', status: 'status' };
 
   api.patch('/kayitlar/:id', requireRole('admin', 'editor'), requireCsrf, (req, res) => {
     const id = parseId(req.params.id);
@@ -266,7 +267,7 @@ export function createApp({ config, db, logger = console, limits = {} }) {
       changes.endDate = end;
     }
     const keys = Object.keys(changes);
-    const sets = keys.map((k) => `${PATCH_COLUMNS[k]} = ?`).join(', ');
+    const sets = keys.map((k) => `${PATCH_COLUMNS[k]} = ?`).join(', ') + (changes.note !== undefined ? ", note = ''" : '');
     db.prepare(`UPDATE trips SET ${sets}, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?`)
       .run(...keys.map((k) => changes[k]), id);
     const after = getTrip(id);

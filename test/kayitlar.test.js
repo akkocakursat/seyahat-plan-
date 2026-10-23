@@ -137,7 +137,7 @@ test('geçersiz girdiler reddedilir', async () => {
     { ...base, personId: -1 },
     { ...base, extra: 'x' },
     { ...base, __proto__x: 1 },
-    { ...base, note: 'n'.repeat(501) },
+    { ...base, note: 'n'.repeat(5001) },
     { ...base, region: 'r'.repeat(81) },
     { ...base, region: '   ' },
     { ...base, region: '‮​' },
@@ -155,19 +155,39 @@ test('geçersiz girdiler reddedilir', async () => {
 
   const okRes = await add({ ...base });
   const id = okRes.json.kayit.id;
-  for (const body of [{}, { bilinmeyen: 1 }, { date: '2026-02-30' }, { note: 'n'.repeat(501) }, { personId: 9999 }]) {
+  for (const body of [{}, { bilinmeyen: 1 }, { date: '2026-02-30' }, { note: 'n'.repeat(5001) }, { personId: 9999 }]) {
     assert.equal((await s.req('PATCH', `/api/kayitlar/${id}`, { session: ed, body })).status, 400, JSON.stringify(body));
   }
   assert.equal((await s.req('PATCH', '/api/kayitlar/abc', { session: ed, body: { status: 'done' } })).status, 404);
   await s.req('DELETE', `/api/kayitlar/${id}`, { session: ed });
 });
 
-test('500 karakterlik not kabul edilir; kontrol ve yön karakterleri temizlenir', async () => {
+test('uzun not kabul edilir; kontrol ve yön karakterleri temizlenir', async () => {
   const res = await add({ personId: people[0].id, region: 'An‮kara\u0007', date: '2026-10-12', note: `${'ç'.repeat(499)}‏!`, status: 'done' });
   assert.equal(res.status, 201);
   assert.equal(res.json.kayit.region, 'Ankara');
   assert.equal([...res.json.kayit.note].length, 500);
   await s.req('DELETE', `/api/kayitlar/${res.json.kayit.id}`, { session: ed });
+});
+
+test('uzun not (5000 karaktere kadar) tam saklanır; eski kısa notlar okunur; not silinebilir', async () => {
+  const long = `Saha ziyareti\n${'Konya bölgesinde fiyat görüşmesi. '.repeat(120)}`.slice(0, 4000);
+  const r = await add({ personId: people[0].id, region: 'Konya', date: '2026-10-22', note: long });
+  assert.equal(r.status, 201);
+  assert.equal(r.json.kayit.note, long);
+  const id = r.json.kayit.id;
+  const list = (await s.req('GET', '/api/kayitlar?ay=2026-10', { session: ed })).json.kayitlar;
+  assert.equal(list.find((k) => k.id === id).note.length, 4000);
+  const longer = 'x'.repeat(5000);
+  assert.equal((await s.req('PATCH', `/api/kayitlar/${id}`, { session: ed, body: { note: longer } })).json.kayit.note, longer);
+  assert.equal((await s.req('PATCH', `/api/kayitlar/${id}`, { session: ed, body: { note: '' } })).json.kayit.note, '');
+  // Uzun not özelliğinden önce kaydedilmiş not (yalnızca "note" sütununda) görünmeye devam eder.
+  const old = s.db.prepare("INSERT INTO trips (person_id, region, date, end_date, note, status) VALUES (?, 'Eski', '2026-10-01', '2026-10-01', 'Eski not', 'done')")
+    .run(people[0].id);
+  const oldTrip = (await s.req('GET', '/api/kayitlar?ay=2026-10', { session: ed })).json.kayitlar.find((k) => k.id === Number(old.lastInsertRowid));
+  assert.equal(oldTrip.note, 'Eski not');
+  await s.req('DELETE', `/api/kayitlar/${id}`, { session: ed });
+  await s.req('DELETE', `/api/kayitlar/${oldTrip.id}`, { session: ed });
 });
 
 test('HTML içeren metin olduğu gibi saklanır (arayüz textContent ile basar)', async () => {

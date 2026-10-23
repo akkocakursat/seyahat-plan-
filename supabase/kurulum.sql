@@ -59,6 +59,9 @@ create table if not exists seyahat.trips (
 -- Silinen kayıtlar yalnızca işaretlenir (geri alınabilir, denetim izi korunur); hiçbir sorguda görünmez.
 alter table seyahat.trips add column if not exists deleted_at timestamptz;
 
+-- Not en fazla 5000 karakter "details" sütununda; bundan önce kaydedilmiş kısa notlar "note" sütunundadır.
+alter table seyahat.trips add column if not exists details text check (char_length(details) <= 5000);
+
 -- Seyahatin bitiş tarihi (başlangıç dahil en fazla 365 gün). Eski kayıtlar tek günlük sayılır.
 alter table seyahat.trips add column if not exists end_date date;
 update seyahat.trips set end_date = date where end_date is null;
@@ -314,7 +317,7 @@ begin
     else
       v_txt := seyahat.clean(p ->> 'note', true);
     end if;
-    if char_length(v_txt) > 500 then return jsonb_build_object('error', 'Not en fazla 500 karakter olabilir.'); end if;
+    if char_length(v_txt) > 5000 then return jsonb_build_object('error', 'Not en fazla 5000 karakter olabilir.'); end if;
     v_out := v_out || jsonb_build_object('note', v_txt);
   elsif not p_partial then
     v_out := v_out || jsonb_build_object('note', '');
@@ -336,7 +339,7 @@ create or replace function seyahat.trip_json(t seyahat.trips) returns jsonb
 language sql immutable set search_path = '' as $$
   select jsonb_build_object('id', t.id, 'personId', t.person_id, 'region', t.region,
                             'date', to_char(t.date, 'YYYY-MM-DD'), 'endDate', to_char(t.end_date, 'YYYY-MM-DD'),
-                            'note', t.note, 'status', t.status)
+                            'note', coalesce(t.details, t.note), 'status', t.status)
 $$;
 
 -- Kullanıcı adı anahtarı: küçük harf, Türkçe harfler ASCII karşılıklarına çevrilir.
@@ -554,8 +557,8 @@ begin
   if not exists (select 1 from seyahat.people where id = (v ->> 'personId')::bigint) then
     return seyahat.err(400, 'Kişi bulunamadı.');
   end if;
-  insert into seyahat.trips (person_id, region, date, end_date, note, status, created_by)
-  values ((v ->> 'personId')::bigint, v ->> 'region', (v ->> 'date')::date, (v ->> 'endDate')::date, v ->> 'note', v ->> 'status', v_user.id)
+  insert into seyahat.trips (person_id, region, date, end_date, note, details, status, created_by)
+  values ((v ->> 'personId')::bigint, v ->> 'region', (v ->> 'date')::date, (v ->> 'endDate')::date, '', v ->> 'note', v ->> 'status', v_user.id)
   returning * into v_trip;
   perform seyahat.audit_log(v_user, 'kayit_ekle', seyahat.trip_json(v_trip));
   return json_build_object('kayit', seyahat.trip_json(v_trip));
@@ -595,7 +598,8 @@ begin
     region     = coalesce(v ->> 'region', region),
     date       = v_start,
     end_date   = v_end,
-    note       = coalesce(v ->> 'note', note),
+    note       = case when v ? 'note' then '' else note end,
+    details    = case when v ? 'note' then v ->> 'note' else details end,
     status     = coalesce(v ->> 'status', status),
     updated_at = now()
   where id = p_id
