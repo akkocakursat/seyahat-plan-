@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src https://tzxlqygyhbqdzkaihowf.supabase.co; form-action 'self'; base-uri 'none'; object-src 'none'">
+  <meta name="referrer" content="no-referrer">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#ffffff">
+  <title>Seyahat Defteri</title>
+  <link rel="icon" href="v/e242b6b27c/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="v/e242b6b27c/apple-touch-icon.png">
+  <link rel="stylesheet" href="v/e242b6b27c/css/app.css">
+  <script type="module" src="v/e242b6b27c/js/app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-in">
+      <div class="brand">
+        <img class="logo" src="v/e242b6b27c/favicon.svg" alt="" width="28" height="28">
+        <span class="brand-name">Seyahat Defteri</span>
+      </div>
+      <nav class="tabs" id="tabs" aria-label="Bölümler"></nav>
+      <div class="me" id="me" hidden>
+        <span class="me-who"><span class="me-name" id="me-name"></span> <span class="me-role" id="me-role"></span></span>
+        <button type="button" class="btn btn-quiet btn-small" id="logout">Çıkış</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="main" id="main" hidden>
+    <div id="view"></div>
+  </main>
+
+  <button type="button" class="fab" id="fab" hidden><span>Seyahat ekle</span></button>
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+  <p class="loading" id="loading">Yükleniyor…</p>
+</body>
+</html>
